@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from pournotify.config import AppConfig, ConfigStore
 from pournotify.models import Category
 from pournotify.services.codex import parse_codex_event
@@ -27,6 +29,29 @@ def test_codex_complete_parsing_and_truncation():
     assert len(notice.message) == 600
     assert notice.system_generated is True
     assert notice.deduplication_id == "turn-1"
+
+
+@pytest.mark.parametrize(
+    ("workspace", "expected"),
+    [
+        (r"F:\work\PourCase", "PourCase"),
+        ("/projects/PourNotify", "PourNotify"),
+        (r"C:\work\Pour Case", "Pour Case"),
+        ("/projects/通知 项目", "通知 项目"),
+        ("C:/work/PourNotify/", "PourNotify"),
+        (r"F:\work\PourCase\\", "PourCase"),
+        ("/work/PourCase/", "PourCase"),
+    ],
+)
+def test_codex_project_name_supports_foreign_path_styles(workspace, expected):
+    notice = parse_codex_event({"type": "agent-turn-complete", "cwd": workspace})
+    assert notice.project == expected
+
+
+@pytest.mark.parametrize("workspace", ["", "   ", None, 123, "\0invalid"])
+def test_codex_project_name_safely_handles_invalid_input(workspace):
+    notice = parse_codex_event({"type": "agent-turn-complete", "cwd": workspace})
+    assert notice.project == "Codex"
 
 
 def test_unknown_codex_event_is_safe():

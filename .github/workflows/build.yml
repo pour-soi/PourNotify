@@ -6,6 +6,7 @@ on:
 jobs:
   test-and-build:
     strategy:
+      fail-fast: false
       matrix:
         os: [windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
@@ -16,6 +17,7 @@ jobs:
           python-version: "3.11"
       - run: python -m pip install -e ".[dev]"
       - run: python -m pytest
+      - run: python -m ruff check .
       - run: python -m PyInstaller --clean --noconfirm PourNotify.spec
       - uses: actions/upload-artifact@v4
         with:
