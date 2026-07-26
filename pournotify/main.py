@@ -14,6 +14,8 @@ from .services.codex import parse_codex_event
 from .services.ipc import NotificationIpcServer, send_to_running_instance
 from .ui.main_window import MainWindow
 
+LOGGER = logging.getLogger(__name__)
+
 
 def configure_logging() -> None:
     folder = app_data_dir() / "logs"
@@ -26,10 +28,10 @@ def dispatch_codex_payload(window: MainWindow, payload: str) -> bool:
     try:
         notification = parse_codex_event(json.loads(payload))
     except (TypeError, ValueError, json.JSONDecodeError):
-        logging.warning("Ignored malformed Codex notification payload")
+        LOGGER.warning("Ignored malformed Codex notification payload")
         return False
     if notification is None:
-        logging.info("Ignored unsupported Codex notification type")
+        LOGGER.info("Ignored unsupported Codex notification type")
         return False
     window.dispatcher.dispatch(notification)
     return True

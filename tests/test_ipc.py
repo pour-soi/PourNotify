@@ -6,7 +6,8 @@ from PySide6.QtWidgets import QApplication
 
 from pournotify.main import dispatch_codex_payload
 from pournotify.services.ipc import (
-    SERVER_NAME, NotificationIpcServer,
+    SERVER_NAME,
+    NotificationIpcServer,
 )
 
 
@@ -23,12 +24,14 @@ def test_local_ipc_forwards_payload_to_running_instance():
         [
             sys.executable,
             "-c",
+            (
                 "from pournotify.services.ipc import send_to_running_instance;"
                 "import sys;"
                 "raise SystemExit(0 if send_to_running_instance("
-                "'{\"type\":\"agent-turn-complete\"}',server_name=sys.argv[1]) else 1)",
-                test_server_name,
-            ],
+                "'{\"type\":\"agent-turn-complete\"}',server_name=sys.argv[1]) else 1)"
+            ),
+            test_server_name,
+        ],
     )
     while client.poll() is None:
         qt_app.processEvents()

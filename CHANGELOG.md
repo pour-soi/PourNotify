@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.2
+
+- Pinned Ruff 0.16.0 and resolved its findings so local and CI lint gates remain reproducible.
+
 ## 1.0.1
 
 - Added a packaged application icon so Windows tray notifications are registered and displayed.

@@ -1,6 +1,10 @@
 from pournotify.models import Category, Notification
 from pournotify.services.content import (
-    PREVIEW_LIMIT, copy_text, entry_priority, history_preview, normalize_system_title,
+    PREVIEW_LIMIT,
+    copy_text,
+    entry_priority,
+    history_preview,
+    normalize_system_title,
 )
 from pournotify.services.test_cases import LONG_TEST_MESSAGE, notification_test_cases
 

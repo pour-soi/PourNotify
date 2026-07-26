@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 
 from pournotify.config import AppConfig
 from pournotify.models import Category, Notification, Priority
@@ -46,7 +46,9 @@ def test_each_category_has_independent_settings():
 def test_disabled_category_stops_complete_pipeline():
     config = AppConfig()
     config.categories[Category.TASK_COMPLETED.value].enabled = False
-    service, history, desktop, sounds, bark = dispatcher(config, datetime(2026, 7, 23, 12))
+    service, history, desktop, sounds, bark = dispatcher(
+        config, datetime(2026, 7, 23, 12, tzinfo=UTC)
+    )
     result = service.dispatch(Notification(Category.TASK_COMPLETED, "Done", "Complete"))
     assert result.status == "disabled"
     assert not any((history.items, desktop.items, sounds.items, bark.items))
@@ -56,7 +58,9 @@ def test_quiet_hours_keep_desktop_but_mute_sound():
     config = AppConfig(quiet_hours_enabled=True, quiet_start="22:00", quiet_end="08:00")
     setting = config.categories[Category.TASK_COMPLETED.value]
     setting.priority = Priority.NORMAL
-    service, history, desktop, sounds, _ = dispatcher(config, datetime(2026, 7, 23, 23))
+    service, history, desktop, sounds, _ = dispatcher(
+        config, datetime(2026, 7, 23, 23, tzinfo=UTC)
+    )
     service.dispatch(Notification(Category.TASK_COMPLETED, "Done", "Complete"))
     assert len(desktop.items) == 1
     assert sounds.items == []
@@ -68,14 +72,16 @@ def test_critical_can_bypass_quiet_hours():
     setting = config.categories[Category.TASK_FAILED.value]
     setting.sound = True
     setting.priority = Priority.CRITICAL
-    service, _, _, sounds, _ = dispatcher(config, datetime(2026, 7, 23, 23))
+    service, _, _, sounds, _ = dispatcher(
+        config, datetime(2026, 7, 23, 23, tzinfo=UTC)
+    )
     service.dispatch(Notification(Category.TASK_FAILED, "Failed", "Failure"))
     assert len(sounds.items) == 1
 
 
 def test_duplicate_merge_and_rate_limit():
     config = AppConfig(cooldown_seconds=30, max_per_minute=2, merge_duplicates=True)
-    service, *_ = dispatcher(config, datetime(2026, 7, 23, 12))
+    service, *_ = dispatcher(config, datetime(2026, 7, 23, 12, tzinfo=UTC))
     notice = Notification(Category.SYSTEM_EVENTS, "Same", "Same")
     assert service.dispatch(notice).delivered
     assert service.dispatch(notice).status == "merged_duplicate"
@@ -85,7 +91,9 @@ def test_duplicate_merge_and_rate_limit():
 
 def test_delivery_is_truncated_but_history_preserves_original():
     config = AppConfig()
-    service, history, desktop, _, _ = dispatcher(config, datetime(2026, 7, 23, 12))
+    service, history, desktop, _, _ = dispatcher(
+        config, datetime(2026, 7, 23, 12, tzinfo=UTC)
+    )
     original = "x" * 800
     service.dispatch(Notification(Category.TASK_COMPLETED, "Long", original))
     delivered = desktop.items[0][0][0]
@@ -101,7 +109,7 @@ def test_persisted_deduplication_survives_dispatcher_restart(tmp_path):
 
     config = AppConfig(cooldown_seconds=30, merge_duplicates=True)
     history = HistoryStore(tmp_path / "history.json")
-    now = datetime.now().replace(microsecond=0)
+    now = datetime.now(UTC).replace(microsecond=0)
     first = NotificationDispatcher(
         config, history, Recorder(), Recorder(), Recorder(), lambda: now
     )

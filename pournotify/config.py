@@ -60,7 +60,7 @@ class AppConfig:
     custom_sounds: dict[str, str] = field(default_factory=dict)
 
     @classmethod
-    def from_dict(cls, raw: dict[str, Any]) -> "AppConfig":
+    def from_dict(cls, raw: dict[str, Any]) -> AppConfig:
         defaults = cls()
         values = {key: raw[key] for key in asdict(defaults) if key in raw and key != "categories"}
         categories = default_categories()

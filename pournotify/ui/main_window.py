@@ -2,8 +2,16 @@ from __future__ import annotations
 
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
-    QApplication, QLabel, QMainWindow, QMenu, QPushButton, QSystemTrayIcon,
-    QTabWidget, QVBoxLayout, QWidget, QSizePolicy,
+    QApplication,
+    QLabel,
+    QMainWindow,
+    QMenu,
+    QPushButton,
+    QSizePolicy,
+    QSystemTrayIcon,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
 )
 
 from ..config import AppConfig, ConfigStore

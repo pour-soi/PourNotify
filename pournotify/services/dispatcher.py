@@ -1,16 +1,15 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import replace
 from collections import defaultdict, deque
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, replace
 from datetime import datetime, time, timedelta
-from typing import Callable
 
 from ..config import AppConfig
 from ..models import Notification, Priority
-from .delivery import BarkClient, DesktopNotifier
 from .content import normalize_system_title
+from .delivery import BarkClient, DesktopNotifier
 from .history import HistoryStore
 from .sounds import SoundManager
 
@@ -46,15 +45,16 @@ class NotificationDispatcher:
         ).hexdigest()
         cutoff = now - timedelta(seconds=max(0, self.config.cooldown_seconds))
         persisted_duplicate = self.history.has_recent_duplicate(notification, key, cutoff)
+        oldest = datetime.min.replace(tzinfo=now.tzinfo)
         if (
-            self._recent.get(key, datetime.min) > cutoff or persisted_duplicate
+            self._recent.get(key, oldest) > cutoff or persisted_duplicate
         ) and self.config.merge_duplicates:
             self._duplicate_counts[key] += 1
             if settings.history:
                 self.history.merge_last(notification, settings.priority, key)
             return DispatchResult(False, "merged_duplicate")
         if self.config.duplicate_suppression and (
-            self._recent.get(key, datetime.min) > cutoff or persisted_duplicate
+            self._recent.get(key, oldest) > cutoff or persisted_duplicate
         ):
             self._duplicate_counts[key] += 1
             return DispatchResult(False, "duplicate_suppressed")
@@ -82,7 +82,7 @@ class NotificationDispatcher:
         if settings.desktop:
             try:
                 self.desktop.send(delivery_notification, settings.priority)
-            except Exception:
+            except Exception:  # noqa: BLE001 - isolate desktop adapter failures
                 failures.append("desktop")
         if settings.sound and (not quiet or bypass):
             self.sounds.play(settings.sound_name, settings.volume, self.config.custom_sounds)
@@ -94,7 +94,7 @@ class NotificationDispatcher:
                     time_sensitive=self.config.bark_time_sensitive,
                     silent=quiet and self.config.quiet_bark_silent and not bypass,
                 )
-            except Exception:
+            except Exception:  # noqa: BLE001 - isolate Bark adapter failures
                 failures.append("bark")
         status = "attempted_with_errors:" + ",".join(failures) if failures else "attempted"
         if settings.history:

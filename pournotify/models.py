@@ -53,7 +53,7 @@ class CategorySettings:
     priority: Priority = Priority.NORMAL
 
     @classmethod
-    def from_dict(cls, value: dict[str, Any]) -> "CategorySettings":
+    def from_dict(cls, value: dict[str, Any]) -> CategorySettings:
         known = {key: value[key] for key in asdict(cls()) if key in value}
         if "priority" in known:
             known["priority"] = Priority(known["priority"])
