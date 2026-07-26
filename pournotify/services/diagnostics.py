@@ -1,0 +1,109 @@
+from __future__ import annotations
+
+import json
+import os
+import sys
+import threading
+from datetime import datetime
+from pathlib import Path, PurePosixPath, PureWindowsPath
+from time import perf_counter
+
+from .. import __version__
+from ..config import app_data_dir
+from .dispatcher import DispatchTrace
+
+MAX_LOG_BYTES = 10 * 1024 * 1024
+
+
+def diagnostics_log_path() -> Path:
+    return app_data_dir() / "logs" / "notify-diagnostics.jsonl"
+
+
+def _project_name(payload: object) -> str:
+    if not isinstance(payload, dict):
+        return ""
+    explicit = payload.get("project")
+    if isinstance(explicit, str) and explicit.strip():
+        return explicit.strip()
+    workspace = payload.get("cwd") or payload.get("workspace")
+    if not isinstance(workspace, str) or not workspace.strip() or "\0" in workspace:
+        return ""
+    windows_path = PureWindowsPath(workspace)
+    path = (
+        windows_path
+        if windows_path.drive or ("\\" in workspace and "/" not in workspace)
+        else PurePosixPath(workspace)
+    )
+    return path.name
+
+
+def _event_name(payload: object) -> object:
+    if not isinstance(payload, dict):
+        return ""
+    for key in ("type", "event", "event_type"):
+        if key in payload:
+            return payload[key]
+    return ""
+
+
+class NotificationDiagnostics:
+    def __init__(self, path: Path | None = None, max_bytes: int = MAX_LOG_BYTES):
+        self.path = path or diagnostics_log_path()
+        self.max_bytes = max(1, max_bytes)
+        self._lock = threading.Lock()
+
+    def record(
+        self,
+        received_payload: object,
+        notify_source: str,
+        trace: DispatchTrace,
+        started_at: float,
+        exception: str = "",
+        arguments: list[str] | None = None,
+    ) -> bool:
+        payload = received_payload if isinstance(received_payload, dict) else {}
+        record = {
+            "timestamp": datetime.now().astimezone().isoformat(timespec="milliseconds"),
+            "event": _event_name(received_payload),
+            "project": _project_name(received_payload),
+            "workspace": payload.get("workspace", ""),
+            "cwd": payload.get("cwd", ""),
+            "pid": os.getpid(),
+            "arguments": list(sys.argv if arguments is None else arguments),
+            "received_payload": received_payload,
+            "notify_source": notify_source,
+            "dispatch_status": trace.dispatch_status,
+            "history_attempted": trace.history_attempted,
+            "desktop_attempted": trace.desktop_attempted,
+            "bark_attempted": trace.bark_attempted,
+            "desktop_result": trace.desktop_result,
+            "bark_result": trace.bark_result,
+            "history_result": trace.history_result,
+            "http_status": trace.http_status,
+            "bark_response": trace.bark_response,
+            "duration_ms": round((perf_counter() - started_at) * 1000, 3),
+            "exception": exception or trace.exception,
+            "version": __version__,
+        }
+        try:
+            line = json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n"
+            encoded_size = len(line.encode("utf-8"))
+            with self._lock:
+                self.path.parent.mkdir(parents=True, exist_ok=True)
+                if self.path.exists() and self.path.stat().st_size + encoded_size > self.max_bytes:
+                    self._rotate()
+                with self.path.open("a", encoding="utf-8", newline="") as stream:
+                    stream.write(line)
+            return True
+        except Exception:  # noqa: BLE001 - diagnostics must never affect notification delivery
+            return False
+
+    def _rotate(self) -> None:
+        second = self.path.with_name("notify-diagnostics.2.jsonl")
+        first = self.path.with_name("notify-diagnostics.1.jsonl")
+        if second.exists():
+            second.unlink()
+        if first.exists():
+            first.replace(second)
+        if self.path.exists():
+            self.path.replace(first)

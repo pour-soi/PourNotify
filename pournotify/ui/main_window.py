@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from PySide6.QtGui import QAction
+from PySide6.QtCore import QUrl
+from PySide6.QtGui import QAction, QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
     QLabel,
@@ -17,6 +18,7 @@ from PySide6.QtWidgets import (
 from ..config import AppConfig, ConfigStore
 from ..resources import application_icon
 from ..services.delivery import TrayDesktopNotifier
+from ..services.diagnostics import diagnostics_log_path
 from ..services.dispatcher import NotificationDispatcher
 from ..services.history import HistoryStore
 from ..services.sounds import SoundManager
@@ -53,6 +55,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(SettingsPage(config, store, self.sounds), "Settings")
         self.tabs.currentChanged.connect(self._tab_changed)
         self.setCentralWidget(self.tabs)
+        self._setup_menu_bar()
         self.setStyleSheet("""
             QMainWindow { background: #f5f6f8; }
             QGroupBox, QTableWidget, QTabWidget::pane { background: white; border: 1px solid #dfe3e8;
@@ -108,6 +111,18 @@ class MainWindow(QMainWindow):
         quit_action.triggered.connect(QApplication.quit)
         menu.addActions([dashboard, check, quit_action])
         return menu
+
+    def _setup_menu_bar(self) -> None:
+        help_menu = self.menuBar().addMenu("Help")
+        diagnostics = QAction("Open Notification Diagnostics", self)
+        diagnostics.triggered.connect(self._open_notification_diagnostics)
+        help_menu.addAction(diagnostics)
+
+    @staticmethod
+    def _open_notification_diagnostics() -> None:
+        folder = diagnostics_log_path().parent
+        folder.mkdir(parents=True, exist_ok=True)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
 
     def closeEvent(self, event) -> None:
         event.ignore()

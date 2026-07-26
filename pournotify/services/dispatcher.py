@@ -9,7 +9,7 @@ from datetime import datetime, time, timedelta
 from ..config import AppConfig
 from ..models import Notification, Priority
 from .content import normalize_system_title
-from .delivery import BarkClient, DesktopNotifier
+from .delivery import BarkClient, BarkDeliveryResult, DesktopNotifier
 from .history import HistoryStore
 from .sounds import SoundManager
 
@@ -18,6 +18,24 @@ from .sounds import SoundManager
 class DispatchResult:
     delivered: bool
     status: str
+
+
+@dataclass(slots=True)
+class DispatchTrace:
+    dispatch_status: str = "not_dispatched"
+    history_attempted: bool = False
+    desktop_attempted: bool = False
+    bark_attempted: bool = False
+    desktop_result: str = "not_attempted"
+    bark_result: str = "not_attempted"
+    history_result: str = "not_attempted"
+    http_status: int | None = None
+    bark_response: str = ""
+    exception: str = ""
+
+    def add_exception(self, channel: str, error: Exception) -> None:
+        detail = f"{channel}: {type(error).__name__}: {error}"
+        self.exception = f"{self.exception}; {detail}" if self.exception else detail
 
 
 class NotificationDispatcher:
@@ -34,7 +52,10 @@ class NotificationDispatcher:
         self._minute: deque[datetime] = deque()
         self._duplicate_counts: defaultdict[str, int] = defaultdict(int)
 
-    def dispatch(self, notification: Notification) -> DispatchResult:
+    def dispatch(
+        self, notification: Notification, trace: DispatchTrace | None = None
+    ) -> DispatchResult:
+        trace = trace or DispatchTrace()
         notification = normalize_system_title(notification)
         settings = self.config.categories[notification.category.value]
         if not settings.enabled:
@@ -51,7 +72,14 @@ class NotificationDispatcher:
         ) and self.config.merge_duplicates:
             self._duplicate_counts[key] += 1
             if settings.history:
-                self.history.merge_last(notification, settings.priority, key)
+                trace.history_attempted = True
+                try:
+                    self.history.merge_last(notification, settings.priority, key)
+                    trace.history_result = "merged_duplicate"
+                except Exception as error:
+                    trace.history_result = "error"
+                    trace.add_exception("history", error)
+                    raise
             return DispatchResult(False, "merged_duplicate")
         if self.config.duplicate_suppression and (
             self._recent.get(key, oldest) > cutoff or persisted_duplicate
@@ -80,25 +108,45 @@ class NotificationDispatcher:
             ),
         )
         if settings.desktop:
+            trace.desktop_attempted = True
             try:
                 self.desktop.send(delivery_notification, settings.priority)
-            except Exception:  # noqa: BLE001 - isolate desktop adapter failures
+                trace.desktop_result = "attempted_no_exception"
+            except Exception as error:  # noqa: BLE001 - isolate desktop adapter failures
                 failures.append("desktop")
+                trace.desktop_result = "error"
+                trace.add_exception("desktop", error)
         if settings.sound and (not quiet or bypass):
             self.sounds.play(settings.sound_name, settings.volume, self.config.custom_sounds)
         if settings.bark and self.config.bark_enabled and self.config.bark_device_key:
+            trace.bark_attempted = True
             try:
-                self.bark.send(
+                bark_result = self.bark.send(
                     self.config.bark_server_url, self.config.bark_device_key, delivery_notification,
                     group=self.config.bark_group, sound=settings.sound_name,
                     time_sensitive=self.config.bark_time_sensitive,
                     silent=quiet and self.config.quiet_bark_silent and not bypass,
                 )
-            except Exception:  # noqa: BLE001 - isolate Bark adapter failures
+                trace.bark_result = "success"
+                if isinstance(bark_result, BarkDeliveryResult):
+                    trace.http_status = bark_result.http_status
+                    trace.bark_response = bark_result.response
+            except Exception as error:  # noqa: BLE001 - isolate Bark adapter failures
                 failures.append("bark")
+                trace.bark_result = "error"
+                trace.http_status = getattr(error, "http_status", None)
+                trace.bark_response = str(getattr(error, "response", ""))
+                trace.add_exception("bark", error)
         status = "attempted_with_errors:" + ",".join(failures) if failures else "attempted"
         if settings.history:
-            self.history.add(notification, status, settings.priority, key)
+            trace.history_attempted = True
+            try:
+                self.history.add(notification, status, settings.priority, key)
+                trace.history_result = "success"
+            except Exception as error:
+                trace.history_result = "error"
+                trace.add_exception("history", error)
+                raise
         return DispatchResult(not failures, status)
 
     def _is_quiet(self, current: time) -> bool:
