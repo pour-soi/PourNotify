@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.1
+
+- Added a packaged application icon so Windows tray notifications are registered and displayed.
+- Changed History delivery status to `attempted` or `attempted_with_errors:*` unless delivery is
+  independently confirmed.
+- Added source and frozen-build icon resource coverage plus a Windows notification checklist.
+
 ## 1.0.0
 
 - Added independently configurable notification categories.

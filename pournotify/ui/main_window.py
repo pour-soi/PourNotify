@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from PySide6.QtGui import QAction, QIcon
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QApplication, QLabel, QMainWindow, QMenu, QPushButton, QSystemTrayIcon,
     QTabWidget, QVBoxLayout, QWidget, QSizePolicy,
 )
 
 from ..config import AppConfig, ConfigStore
+from ..resources import application_icon
 from ..services.delivery import TrayDesktopNotifier
 from ..services.dispatcher import NotificationDispatcher
 from ..services.history import HistoryStore
@@ -22,7 +23,9 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("PourNotify")
         self.resize(1180, 760)
         self.config, self.store = config, store
-        self.tray = QSystemTrayIcon(QIcon(), self)
+        icon = application_icon()
+        self.setWindowIcon(icon)
+        self.tray = QSystemTrayIcon(icon, self)
         self.tray.setToolTip("PourNotify")
         self.tray.setContextMenu(self._tray_menu())
         self.tray.activated.connect(lambda reason: self.show() if reason == QSystemTrayIcon.Trigger else None)

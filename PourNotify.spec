@@ -3,7 +3,7 @@ a = Analysis(
     ["run_pournotify.py"],
     pathex=["."],
     binaries=[],
-    datas=[],
+    datas=[("pournotify/resources/pournotify.svg", "pournotify/resources")],
     hiddenimports=["PySide6.QtMultimedia"],
     hookspath=[],
     runtime_hooks=[],
@@ -19,4 +19,5 @@ exe = EXE(
     strip=False,
     upx=True,
     console=False,
+    icon="pournotify/resources/pournotify.ico",
 )

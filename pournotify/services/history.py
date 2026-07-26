@@ -113,7 +113,9 @@ class HistoryStore:
                 comparable_cutoff = cutoff.replace(tzinfo=None)
             if timestamp <= comparable_cutoff:
                 continue
-            if str(entry.get("status", "")).startswith(("delivered", "partial:")):
+            if str(entry.get("status", "")).startswith(
+                ("attempted", "delivered", "partial:")
+            ):
                 count += 1
         return count
 

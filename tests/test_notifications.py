@@ -92,6 +92,7 @@ def test_delivery_is_truncated_but_history_preserves_original():
     recorded = history.items[0][0][0]
     assert len(delivered.message) == 500
     assert recorded.message == original
+    assert history.items[0][0][1] == "attempted"
     assert history.items[0][0][2] == Priority.NORMAL
 
 
@@ -111,7 +112,7 @@ def test_persisted_deduplication_survives_dispatcher_restart(tmp_path):
         Category.TASK_COMPLETED, "Codex Task Completed", "Done",
         deduplication_id="same-turn",
     )
-    assert first.dispatch(notice).status == "delivered"
+    assert first.dispatch(notice).status == "attempted"
     assert second.dispatch(notice).status == "merged_duplicate"
     entries = history.read()
     assert len(entries) == 1

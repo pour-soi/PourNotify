@@ -96,7 +96,7 @@ class NotificationDispatcher:
                 )
             except Exception:
                 failures.append("bark")
-        status = "partial:" + ",".join(failures) if failures else "delivered"
+        status = "attempted_with_errors:" + ",".join(failures) if failures else "attempted"
         if settings.history:
             self.history.add(notification, status, settings.priority, key)
         return DispatchResult(not failures, status)
