@@ -1,20 +1,23 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QCheckBox,
     QComboBox,
     QFileDialog,
+    QFrame,
     QGridLayout,
-    QGroupBox,
+    QHBoxLayout,
     QHeaderView,
     QLabel,
     QLineEdit,
     QMessageBox,
     QPushButton,
-    QSizePolicy,
+    QScrollArea,
     QSpinBox,
     QTableWidget,
     QTableWidgetItem,
@@ -29,124 +32,293 @@ from ..services.sounds import BUILT_IN_SOUNDS, SoundManager
 
 
 class SettingsPage(QWidget):
-    def __init__(self, config: AppConfig, store: ConfigStore, sounds: SoundManager):
+    def __init__(
+        self,
+        config: AppConfig,
+        store: ConfigStore,
+        sounds: SoundManager,
+        theme_changed: Callable[[str], None] | None = None,
+    ):
         super().__init__()
-        self.setMinimumWidth(0)
-        self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         self.config, self.store, self.sounds = config, store, sounds
-        layout = QVBoxLayout(self)
-        bark = QGroupBox("Bark")
-        bark.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
-        bark_layout = QGridLayout(bark)
+        self.theme_changed = theme_changed
+        self.category_controls: dict[Category, dict[str, object]] = {}
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        scroll = QScrollArea()
+        scroll.setObjectName("pageScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(0, 0, 8, 24)
+        layout.setSpacing(16)
+        layout.addWidget(self._appearance_card())
+        layout.addWidget(self._bark_card())
+        layout.addWidget(self._quiet_card())
+        layout.addWidget(self._anti_spam_card())
+        layout.addWidget(self._categories_card())
+        layout.addLayout(self._actions())
+        scroll.setWidget(content)
+        outer.addWidget(scroll)
+
+    @staticmethod
+    def _card(title: str, description: str = "") -> tuple[QFrame, QVBoxLayout]:
+        card = QFrame()
+        card.setObjectName("card")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+        heading = QLabel(title)
+        heading.setObjectName("sectionTitle")
+        layout.addWidget(heading)
+        if description:
+            copy = QLabel(description)
+            copy.setObjectName("sectionDescription")
+            copy.setWordWrap(True)
+            layout.addWidget(copy)
+        return card, layout
+
+    def _appearance_card(self) -> QWidget:
+        card, layout = self._card(
+            "Appearance", "Use the system appearance or choose a consistent light or dark theme."
+        )
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        self.appearance_group = QButtonGroup(self)
+        self.appearance_group.setExclusive(True)
+        self.appearance_buttons: dict[str, QPushButton] = {}
+        for mode in ("system", "light", "dark"):
+            button = QPushButton(mode.title())
+            button.setObjectName("appearanceButton")
+            button.setCheckable(True)
+            button.setChecked(self.config.theme == mode)
+            button.clicked.connect(
+                lambda checked=False, value=mode: self._preview_theme(value)
+            )
+            self.appearance_group.addButton(button)
+            self.appearance_buttons[mode] = button
+            row.addWidget(button)
+        row.addStretch()
+        layout.addLayout(row)
+        return card
+
+    def _preview_theme(self, mode: str) -> None:
+        if self.theme_changed is not None:
+            self.theme_changed(mode)
+
+    def _bark_card(self) -> QWidget:
+        card, layout = self._card(
+            "Bark", "Send selected notification categories to the configured Bark server."
+        )
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(10)
         self.bark_enabled = QCheckBox("Enable Bark")
-        self.bark_enabled.setChecked(config.bark_enabled)
-        self.bark_url = QLineEdit(config.bark_server_url)
-        self.bark_key = QLineEdit(config.bark_device_key)
+        self.bark_enabled.setChecked(self.config.bark_enabled)
+        self.bark_url = QLineEdit(self.config.bark_server_url)
+        self.bark_key = QLineEdit(self.config.bark_device_key)
         self.bark_key.setEchoMode(QLineEdit.Password)
-        bark_layout.addWidget(self.bark_enabled, 0, 0, 1, 2)
-        bark_layout.addWidget(QLabel("HTTPS server"), 1, 0)
-        bark_layout.addWidget(self.bark_url, 1, 1)
-        bark_layout.addWidget(QLabel("Device key"), 2, 0)
-        bark_layout.addWidget(self.bark_key, 2, 1)
-        layout.addWidget(bark)
+        grid.addWidget(self.bark_enabled, 0, 0, 1, 2)
+        grid.addWidget(self._field_label("HTTPS SERVER"), 1, 0)
+        grid.addWidget(self.bark_url, 1, 1)
+        grid.addWidget(self._field_label("DEVICE KEY"), 2, 0)
+        grid.addWidget(self.bark_key, 2, 1)
+        grid.setColumnStretch(1, 1)
+        layout.addLayout(grid)
+        return card
 
-        quiet = QGroupBox("Quiet Hours")
-        quiet.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
-        quiet_layout = QGridLayout(quiet)
-        self.quiet_enabled = QCheckBox("Enable")
-        self.quiet_enabled.setChecked(config.quiet_hours_enabled)
+    def _quiet_card(self) -> QWidget:
+        card, layout = self._card(
+            "Quiet Hours", "Reduce interruption while preserving configured critical alerts."
+        )
+        grid = QGridLayout()
+        grid.setSpacing(10)
+        self.quiet_enabled = QCheckBox("Enable quiet hours")
+        self.quiet_enabled.setChecked(self.config.quiet_hours_enabled)
         self.quiet_start, self.quiet_end = QTimeEdit(), QTimeEdit()
-        self.quiet_start.setTime(self.quiet_start.time().fromString(config.quiet_start, "HH:mm"))
-        self.quiet_end.setTime(self.quiet_end.time().fromString(config.quiet_end, "HH:mm"))
+        self.quiet_start.setTime(
+            self.quiet_start.time().fromString(self.config.quiet_start, "HH:mm")
+        )
+        self.quiet_end.setTime(
+            self.quiet_end.time().fromString(self.config.quiet_end, "HH:mm")
+        )
         self.bark_silent = QCheckBox("Make Bark silent")
-        self.bark_silent.setChecked(config.quiet_bark_silent)
+        self.bark_silent.setChecked(self.config.quiet_bark_silent)
         self.critical_bypass = QCheckBox("Critical notifications may bypass")
-        self.critical_bypass.setChecked(config.quiet_allow_critical)
-        quiet_layout.addWidget(self.quiet_enabled, 0, 0)
-        quiet_layout.addWidget(QLabel("From"), 1, 0)
-        quiet_layout.addWidget(self.quiet_start, 1, 1)
-        quiet_layout.addWidget(QLabel("To"), 1, 2)
-        quiet_layout.addWidget(self.quiet_end, 1, 3)
-        quiet_layout.addWidget(self.bark_silent, 2, 0, 1, 2)
-        quiet_layout.addWidget(self.critical_bypass, 2, 2, 1, 2)
-        layout.addWidget(quiet)
+        self.critical_bypass.setChecked(self.config.quiet_allow_critical)
+        grid.addWidget(self.quiet_enabled, 0, 0, 1, 4)
+        grid.addWidget(self._field_label("FROM"), 1, 0)
+        grid.addWidget(self.quiet_start, 1, 1)
+        grid.addWidget(self._field_label("TO"), 1, 2)
+        grid.addWidget(self.quiet_end, 1, 3)
+        grid.addWidget(self.bark_silent, 2, 0, 1, 2)
+        grid.addWidget(self.critical_bypass, 2, 2, 1, 2)
+        grid.setColumnStretch(3, 1)
+        layout.addLayout(grid)
+        return card
 
-        anti = QGroupBox("Anti-spam")
-        anti.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
-        anti_layout = QGridLayout(anti)
+    def _anti_spam_card(self) -> QWidget:
+        card, layout = self._card(
+            "Anti-spam", "Control duplicate handling and notification rate limits."
+        )
+        grid = QGridLayout()
+        grid.setSpacing(10)
         self.suppress = QCheckBox("Suppress duplicates")
-        self.suppress.setChecked(config.duplicate_suppression)
+        self.suppress.setChecked(self.config.duplicate_suppression)
         self.merge = QCheckBox("Merge duplicates")
-        self.merge.setChecked(config.merge_duplicates)
+        self.merge.setChecked(self.config.merge_duplicates)
         self.cooldown = QSpinBox()
         self.cooldown.setRange(0, 86400)
-        self.cooldown.setValue(config.cooldown_seconds)
+        self.cooldown.setValue(self.config.cooldown_seconds)
         self.rate = QSpinBox()
         self.rate.setRange(1, 120)
-        self.rate.setValue(config.max_per_minute)
-        anti_layout.addWidget(self.merge, 0, 0)
-        anti_layout.addWidget(self.suppress, 0, 1)
-        anti_layout.addWidget(QLabel("Cooldown seconds"), 0, 2)
-        anti_layout.addWidget(self.cooldown, 0, 3)
-        anti_layout.addWidget(QLabel("Maximum per minute"), 0, 4)
-        anti_layout.addWidget(self.rate, 0, 5)
-        layout.addWidget(anti)
+        self.rate.setValue(self.config.max_per_minute)
+        grid.addWidget(self.merge, 0, 0)
+        grid.addWidget(self.suppress, 0, 1)
+        grid.addWidget(self._field_label("COOLDOWN SECONDS"), 1, 0)
+        grid.addWidget(self.cooldown, 1, 1)
+        grid.addWidget(self._field_label("MAXIMUM PER MINUTE"), 1, 2)
+        grid.addWidget(self.rate, 1, 3)
+        grid.setColumnStretch(3, 1)
+        layout.addLayout(grid)
+        return card
 
-        self.table = QTableWidget(len(Category), 9)
-        self.table.setMinimumWidth(0)
-        self.table.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Expanding)
-        self.table.setHorizontalHeaderLabels(
-            ["Category", "Enabled", "Bark", "Desktop", "Sound", "History",
-             "Sound choice", "Volume", "Priority"]
+    def _categories_card(self) -> QWidget:
+        card, layout = self._card(
+            "Notification Categories",
+            "Each category keeps independent delivery, sound, volume, history, and priority settings.",
         )
+        self.table = QTableWidget(len(Category), 5)
+        self.table.setObjectName("categoryTable")
+        self.table.setAlternatingRowColors(True)
+        self.table.setMinimumHeight(640)
+        self.table.setHorizontalHeaderLabels(
+            ["Category", "Enabled", "Delivery Channels", "Sound", "Priority"]
+        )
+        self.table.verticalHeader().setVisible(False)
+        self.table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.table.setSelectionMode(QTableWidget.SingleSelection)
+        self.table.setShowGrid(False)
         for row, category in enumerate(Category):
-            setting = config.categories[category.value]
-            label = QTableWidgetItem(CATEGORY_LABELS[category])
-            label.setData(Qt.UserRole, category.value)
-            self.table.setItem(row, 0, label)
-            for column, checked in enumerate(
-                (setting.enabled, setting.bark, setting.desktop, setting.sound, setting.history), 1
-            ):
-                box = QCheckBox()
-                box.setChecked(checked)
-                box.setStyleSheet("margin-left:18px")
-                self.table.setCellWidget(row, column, box)
-            choice = QComboBox()
-            choice.addItems([*BUILT_IN_SOUNDS, *config.custom_sounds])
-            choice.setCurrentText(setting.sound_name)
-            self.table.setCellWidget(row, 6, choice)
-            volume = QSpinBox()
-            volume.setRange(0, 100)
-            volume.setValue(setting.volume)
-            self.table.setCellWidget(row, 7, volume)
-            priority = QComboBox()
-            priority.addItems([value.value.title() for value in Priority])
-            priority.setCurrentText(setting.priority.value.title())
-            self.table.setCellWidget(row, 8, priority)
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+            self._populate_category_row(row, category)
+            self.table.setRowHeight(row, 46)
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.Stretch)
+        header.setSectionResizeMode(3, QHeaderView.Stretch)
+        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
         layout.addWidget(self.table)
-        buttons = QGridLayout()
+        return card
+
+    def _populate_category_row(self, row: int, category: Category) -> None:
+        setting = self.config.categories[category.value]
+        label = QTableWidgetItem(CATEGORY_LABELS[category])
+        label.setData(Qt.UserRole, category.value)
+        self.table.setItem(row, 0, label)
+        enabled = self._centered_checkbox(setting.enabled)
+        self.table.setCellWidget(row, 1, enabled["container"])
+
+        delivery_widget = QWidget()
+        delivery = QHBoxLayout(delivery_widget)
+        delivery.setContentsMargins(6, 0, 6, 0)
+        delivery.setSpacing(10)
+        bark = QCheckBox("Bark")
+        bark.setChecked(setting.bark)
+        desktop = QCheckBox("Desktop")
+        desktop.setChecked(setting.desktop)
+        history = QCheckBox("History")
+        history.setChecked(setting.history)
+        delivery.addWidget(bark)
+        delivery.addWidget(desktop)
+        delivery.addWidget(history)
+        delivery.addStretch()
+        self.table.setCellWidget(row, 2, delivery_widget)
+
+        sound_widget = QWidget()
+        sound_layout = QHBoxLayout(sound_widget)
+        sound_layout.setContentsMargins(6, 0, 6, 0)
+        sound_layout.setSpacing(6)
+        sound = QCheckBox()
+        sound.setToolTip("Enable sound")
+        sound.setChecked(setting.sound)
+        choice = QComboBox()
+        choice.addItems([*BUILT_IN_SOUNDS, *self.config.custom_sounds])
+        choice.setCurrentText(setting.sound_name)
+        volume = QSpinBox()
+        volume.setRange(0, 100)
+        volume.setSuffix("%")
+        volume.setValue(setting.volume)
+        sound_layout.addWidget(sound)
+        sound_layout.addWidget(choice, 1)
+        sound_layout.addWidget(volume)
+        self.table.setCellWidget(row, 3, sound_widget)
+
+        priority = QComboBox()
+        priority.addItems([value.value.title() for value in Priority])
+        priority.setCurrentText(setting.priority.value.title())
+        self.table.setCellWidget(row, 4, priority)
+        self.category_controls[category] = {
+            "enabled": enabled["checkbox"],
+            "bark": bark,
+            "desktop": desktop,
+            "history": history,
+            "sound": sound,
+            "choice": choice,
+            "volume": volume,
+            "priority": priority,
+        }
+
+    @staticmethod
+    def _centered_checkbox(checked: bool) -> dict[str, QWidget]:
+        container = QWidget()
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        box = QCheckBox()
+        box.setChecked(checked)
+        layout.addStretch()
+        layout.addWidget(box)
+        layout.addStretch()
+        return {"container": container, "checkbox": box}
+
+    @staticmethod
+    def _field_label(text: str) -> QLabel:
+        label = QLabel(text)
+        label.setObjectName("fieldLabel")
+        return label
+
+    def _actions(self) -> QHBoxLayout:
+        buttons = QHBoxLayout()
+        buttons.setSpacing(8)
         preview = QPushButton("Preview selected sound")
         preview.clicked.connect(self.preview)
         import_button = QPushButton("Import custom audio")
         import_button.clicked.connect(self.import_sound)
         save = QPushButton("Save Settings")
+        save.setObjectName("primaryButton")
         save.clicked.connect(self.save)
-        buttons.addWidget(preview, 0, 0)
-        buttons.addWidget(import_button, 0, 1)
-        buttons.addWidget(save, 0, 2)
-        layout.addLayout(buttons)
+        buttons.addWidget(preview)
+        buttons.addWidget(import_button)
+        buttons.addStretch()
+        buttons.addWidget(save)
+        return buttons
 
     def preview(self) -> None:
         row = max(0, self.table.currentRow())
+        category = tuple(Category)[row]
+        controls = self.category_controls[category]
         self.sounds.play(
-            self.table.cellWidget(row, 6).currentText(),
-            self.table.cellWidget(row, 7).value(),
+            controls["choice"].currentText(),
+            controls["volume"].value(),
             self.config.custom_sounds,
         )
 
     def import_sound(self) -> None:
-        source, _ = QFileDialog.getOpenFileName(self, "Import audio", "", "Audio (*.wav *.mp3 *.ogg)")
+        source, _ = QFileDialog.getOpenFileName(
+            self, "Import audio", "", "Audio (*.wav *.mp3 *.ogg)"
+        )
         if not source:
             return
         try:
@@ -155,8 +327,8 @@ class SettingsPage(QWidget):
             QMessageBox.warning(self, "Import failed", str(exc))
             return
         self.config.custom_sounds[destination.stem] = str(destination)
-        for row in range(self.table.rowCount()):
-            self.table.cellWidget(row, 6).addItem(destination.stem)
+        for controls in self.category_controls.values():
+            controls["choice"].addItem(destination.stem)
 
     def save(self) -> None:
         if not self.bark_url.text().startswith("https://"):
@@ -174,12 +346,20 @@ class SettingsPage(QWidget):
         self.config.merge_duplicates = self.merge.isChecked()
         self.config.cooldown_seconds = self.cooldown.value()
         self.config.max_per_minute = self.rate.value()
-        for row, category in enumerate(Category):
+        self.config.theme = next(
+            mode for mode, button in self.appearance_buttons.items() if button.isChecked()
+        )
+        for category, controls in self.category_controls.items():
             setting = self.config.categories[category.value]
-            values = [self.table.cellWidget(row, column).isChecked() for column in range(1, 6)]
-            setting.enabled, setting.bark, setting.desktop, setting.sound, setting.history = values
-            setting.sound_name = self.table.cellWidget(row, 6).currentText()
-            setting.volume = self.table.cellWidget(row, 7).value()
-            setting.priority = Priority(self.table.cellWidget(row, 8).currentText().lower())
+            setting.enabled = controls["enabled"].isChecked()
+            setting.bark = controls["bark"].isChecked()
+            setting.desktop = controls["desktop"].isChecked()
+            setting.history = controls["history"].isChecked()
+            setting.sound = controls["sound"].isChecked()
+            setting.sound_name = controls["choice"].currentText()
+            setting.volume = controls["volume"].value()
+            setting.priority = Priority(controls["priority"].currentText().lower())
         self.store.save(self.config)
+        if self.theme_changed is not None:
+            self.theme_changed(self.config.theme)
         QMessageBox.information(self, "Settings saved", "Notification settings were saved.")

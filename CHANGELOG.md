@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.3
+
+- Added JSONL notification diagnostics with rotation and direct log-folder access.
+- Redesigned the desktop interface around the Pour Design System with stable sidebar navigation,
+  Dashboard, Notification Test, History, Settings, and system/light/dark appearance.
+- Preserved all 13 notification categories and existing Codex, desktop, sound, Bark, History,
+  diagnostics, IPC, duplicate-suppression, quiet-hours, configuration, and tray behavior.
+
 ## 1.0.2
 
 - Pinned Ruff 0.16.0 and resolved its findings so local and CI lint gates remain reproducible.

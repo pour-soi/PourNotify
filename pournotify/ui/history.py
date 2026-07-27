@@ -47,7 +47,6 @@ class NotificationDetailsDialog(QDialog):
         title.setTextFormat(Qt.PlainText)
         title.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.TextSelectableByKeyboard)
         title.setWordWrap(True)
-        title.setStyleSheet("font-size: 18px; font-weight: 600;")
         layout.addWidget(title)
 
         metadata = [
@@ -75,7 +74,7 @@ class NotificationDetailsDialog(QDialog):
         actions = QHBoxLayout()
         self.copy_feedback = QLabel("")
         self.copy_feedback.setObjectName("detailCopyFeedback")
-        self.copy_feedback.setStyleSheet("color: #35664b;")
+        self.copy_feedback.setObjectName("copyFeedback")
         actions.addWidget(self.copy_feedback)
         actions.addStretch()
         copy_button = QPushButton("Copy")
@@ -105,36 +104,29 @@ class HistoryCard(QFrame):
         self.setMinimumHeight(154)
         self.setMinimumWidth(0)
         self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
-        self.setStyleSheet(
-            "QFrame#historyCard { background: white; border: 1px solid #dfe3e8;"
-            " border-radius: 10px; }"
-        )
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(14, 12, 14, 12)
-        layout.setSpacing(7)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(8)
 
         header = QHBoxLayout()
         title = QLabel(str(entry.get("title", "")))
         title.setTextFormat(Qt.PlainText)
         title.setWordWrap(True)
         title.setMinimumWidth(0)
-        title.setStyleSheet("font-weight: 600; font-size: 14px;")
+        title.setObjectName("sectionTitle")
         header.addWidget(title, 1)
+        status = str(entry.get("status", ""))
+        status_badge = QLabel(status or "Unknown")
+        status_badge.setObjectName("deliveryStatus")
+        status_badge.setProperty(
+            "state",
+            "success" if status.startswith(("attempted", "delivered")) else "neutral",
+        )
+        header.addWidget(status_badge)
         badge = QLabel(priority_label(entry))
         badge.setObjectName("priorityBadge")
         badge.setProperty("priority", entry_priority(entry))
         badge.setAlignment(Qt.AlignCenter)
-        colors = {
-            "normal": ("#eef1f4", "#30343a"),
-            "high": ("#fff0c2", "#6b4b00"),
-            "critical": ("#ffe1e1", "#8a1c1c"),
-            "low": ("#e6f2ff", "#235a85"),
-        }
-        background, foreground = colors[entry_priority(entry)]
-        badge.setStyleSheet(
-            f"background: {background}; color: {foreground}; border-radius: 8px;"
-            " padding: 3px 8px; font-weight: 600;"
-        )
         header.addWidget(badge)
         layout.addLayout(header)
 
@@ -149,7 +141,7 @@ class HistoryCard(QFrame):
 
         footer = QHBoxLayout()
         time_label = QLabel(str(entry.get("time", "")))
-        time_label.setStyleSheet("color: #66707a;")
+        time_label.setObjectName("historyTime")
         time_label.setMinimumWidth(0)
         footer.addWidget(time_label)
         count = int(entry.get("count", 1))
@@ -211,7 +203,11 @@ class HistoryPage(QWidget):
 
         self.copy_feedback = QLabel("")
         self.copy_feedback.setObjectName("copyFeedback")
-        self.copy_feedback.setStyleSheet("color: #35664b; min-height: 18px;")
+        self.empty_state = QLabel("No notification history yet.")
+        self.empty_state.setObjectName("sectionDescription")
+        self.empty_state.setAlignment(Qt.AlignCenter)
+        self.empty_state.setMinimumHeight(80)
+        self.card_layout.addWidget(self.empty_state)
         layout.addWidget(self.copy_feedback)
         self.refresh()
 
@@ -238,6 +234,12 @@ class HistoryPage(QWidget):
             HistoryCard(entry, self.open_details, self.copy_entry)
             for entry in self.matching_entries()
         ]
+        self.empty_state = QLabel("No matching notification history.")
+        self.empty_state.setObjectName("sectionDescription")
+        self.empty_state.setAlignment(Qt.AlignCenter)
+        self.empty_state.setMinimumHeight(80)
+        self.empty_state.setVisible(not self.cards)
+        self.card_layout.addWidget(self.empty_state)
         for card in self.cards:
             self.card_layout.addWidget(card)
 
