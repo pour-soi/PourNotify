@@ -1,7 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
-  <rect width="256" height="256" rx="56" fill="#24272c"/>
-  <path d="M128 36c-24 36-62 77-62 121a62 62 0 0 0 124 0c0-44-38-85-62-121z"
-        fill="#64d8cb"/>
-  <path d="M105 166c7 13 19 20 34 20 10 0 19-3 26-10"
-        fill="none" stroke="#ffffff" stroke-linecap="round" stroke-width="14"/>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:xlink="http://www.w3.org/1999/xlink"
+     width="1254" height="1254" viewBox="0 0 1254 1254">
+  <title>PourNotify paper-airplane icon</title>
+  <image width="1254" height="1254" preserveAspectRatio="none"
+         href="pournotify-source.jpg" xlink:href="pournotify-source.jpg"/>
 </svg>

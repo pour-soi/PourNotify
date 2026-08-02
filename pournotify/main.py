@@ -12,10 +12,16 @@ from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
 from .config import ConfigStore, app_data_dir
+from .resources import application_icon
 from .services.codex import parse_codex_event
 from .services.diagnostics import NotificationDiagnostics
 from .services.dispatcher import DispatchTrace
-from .services.ipc import NotificationIpcServer, send_to_running_instance
+from .services.ipc import (
+    NotificationIpcServer,
+    send_control_to_running_instance,
+    send_to_running_instance,
+)
+from .services.startup import set_startup_enabled, startup_supported
 from .ui.main_window import MainWindow
 
 LOGGER = logging.getLogger(__name__)
@@ -77,30 +83,60 @@ def dispatch_codex_payload(
     return result
 
 
-def main() -> int:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--notify", help="Codex notify JSON payload")
-    args = parser.parse_args()
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--notify", help="Codex notify JSON payload")
+    mode.add_argument(
+        "--background",
+        action="store_true",
+        help="Start resident notification services without opening the main window",
+    )
+    return parser
+
+
+def launch_action(args: argparse.Namespace) -> str:
+    if args.notify:
+        return "exit" if send_to_running_instance(args.notify) else "notify"
+    command = "ping" if args.background else "show"
+    if send_control_to_running_instance(command):
+        return "exit"
+    return "background" if args.background else "show"
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
     configure_logging()
     app = QApplication(sys.argv[:1])
     app.setQuitOnLastWindowClosed(False)
-    if args.notify and send_to_running_instance(args.notify):
+    app.setWindowIcon(application_icon())
+    action = launch_action(args)
+    if action == "exit":
         return 0
     store = ConfigStore()
     diagnostics = NotificationDiagnostics()
-    window = MainWindow(store.load(), store)
+    config = store.load()
+    if not args.notify and config.start_with_windows and startup_supported():
+        try:
+            set_startup_enabled(True)
+        except OSError as error:
+            LOGGER.warning("Unable to refresh Windows startup registration: %s", error)
+    window = MainWindow(config, store)
     NotificationIpcServer(
         lambda payload: dispatch_codex_payload(
             window, payload, diagnostics, notify_source="ipc"
         ),
-        window,
+        control_handler=lambda command: window.show_and_activate()
+        if command == "show"
+        else None,
+        parent=window,
     )
-    if args.notify:
+    if action == "notify":
         dispatch_codex_payload(
             window, args.notify, diagnostics, notify_source="command_line"
         )
         QTimer.singleShot(2000, app.quit)
-    else:
+    elif action == "show":
         window.show()
     return app.exec()
 

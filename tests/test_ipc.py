@@ -43,6 +43,40 @@ def test_local_ipc_forwards_payload_to_running_instance():
     QLocalServer.removeServer(test_server_name)
 
 
+def test_local_ipc_routes_control_without_changing_notification_payloads():
+    qt_app = app()
+    received = []
+    controls = []
+    test_server_name = SERVER_NAME + "-control-pytest"
+    server = NotificationIpcServer(
+        received.append,
+        control_handler=controls.append,
+        server_name=test_server_name,
+    )
+    client = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            (
+                "from pournotify.services.ipc import send_control_to_running_instance;"
+                "import sys;"
+                "raise SystemExit(0 if send_control_to_running_instance("
+                "'show',server_name=sys.argv[1]) else 1)"
+            ),
+            test_server_name,
+        ],
+    )
+    while client.poll() is None:
+        qt_app.processEvents()
+    for _ in range(5):
+        qt_app.processEvents()
+    assert client.returncode == 0
+    assert controls == ["show"]
+    assert received == []
+    server.server.close()
+    QLocalServer.removeServer(test_server_name)
+
+
 class DispatcherRecorder:
     def __init__(self):
         self.items = []
