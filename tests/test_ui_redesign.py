@@ -128,3 +128,30 @@ def test_notification_test_still_uses_main_dispatcher(tmp_path, monkeypatch):
     assert len(dispatched) == 1
     assert dispatched[0].category == Category.TASK_COMPLETED
     dispose(window)
+
+
+def test_windows_startup_setting_updates_config_and_registration(tmp_path, monkeypatch):
+    registrations = []
+    monkeypatch.setattr("pournotify.ui.settings.startup_supported", lambda: True)
+    monkeypatch.setattr("pournotify.ui.settings.legacy_startup_entries", list)
+    monkeypatch.setattr(
+        "pournotify.ui.settings.set_startup_enabled", registrations.append
+    )
+    monkeypatch.setattr(
+        "pournotify.ui.settings.migrate_legacy_startup_entries", list
+    )
+    monkeypatch.setattr(
+        "pournotify.ui.settings.QMessageBox.information", lambda *args: None
+    )
+    window, config, store = make_window(tmp_path, monkeypatch)
+    page = window.settings_page
+
+    assert page.start_with_windows.isEnabled()
+    assert not page.start_with_windows.isChecked()
+    page.start_with_windows.setChecked(True)
+    page.save()
+
+    assert registrations == [True]
+    assert config.start_with_windows is True
+    assert store.load().start_with_windows is True
+    dispose(window)

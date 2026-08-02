@@ -56,6 +56,7 @@ class AppConfig:
     low_quota_threshold: int = 20
     demo_mode: bool = False
     theme: str = "system"
+    start_with_windows: bool = False
     categories: dict[str, CategorySettings] = field(default_factory=default_categories)
     custom_sounds: dict[str, str] = field(default_factory=dict)
 

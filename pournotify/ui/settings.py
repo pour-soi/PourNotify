@@ -29,6 +29,12 @@ from PySide6.QtWidgets import (
 from ..config import AppConfig, ConfigStore
 from ..models import CATEGORY_LABELS, Category, Priority
 from ..services.sounds import BUILT_IN_SOUNDS, SoundManager
+from ..services.startup import (
+    legacy_startup_entries,
+    migrate_legacy_startup_entries,
+    set_startup_enabled,
+    startup_supported,
+)
 
 
 class SettingsPage(QWidget):
@@ -55,6 +61,7 @@ class SettingsPage(QWidget):
         layout.setContentsMargins(0, 0, 8, 24)
         layout.setSpacing(16)
         layout.addWidget(self._appearance_card())
+        layout.addWidget(self._startup_card())
         layout.addWidget(self._bark_card())
         layout.addWidget(self._quiet_card())
         layout.addWidget(self._anti_spam_card())
@@ -107,6 +114,21 @@ class SettingsPage(QWidget):
     def _preview_theme(self, mode: str) -> None:
         if self.theme_changed is not None:
             self.theme_changed(mode)
+
+    def _startup_card(self) -> QWidget:
+        card, layout = self._card(
+            "Windows Startup",
+            "Keep PourNotify resident after sign-in without opening the main window.",
+        )
+        self.start_with_windows = QCheckBox(
+            "Start PourNotify automatically when I sign in"
+        )
+        self.start_with_windows.setChecked(
+            self.config.start_with_windows or bool(legacy_startup_entries())
+        )
+        self.start_with_windows.setEnabled(startup_supported())
+        layout.addWidget(self.start_with_windows)
+        return card
 
     def _bark_card(self) -> QWidget:
         card, layout = self._card(
@@ -334,6 +356,20 @@ class SettingsPage(QWidget):
         if not self.bark_url.text().startswith("https://"):
             QMessageBox.warning(self, "Invalid Bark URL", "Bark requires an HTTPS server URL.")
             return
+        if startup_supported():
+            requested_startup = self.start_with_windows.isChecked()
+            try:
+                set_startup_enabled(requested_startup)
+                migrate_legacy_startup_entries()
+            except OSError as exc:
+                if requested_startup:
+                    try:
+                        set_startup_enabled(False)
+                    except OSError:
+                        pass
+                QMessageBox.warning(self, "Startup update failed", str(exc))
+                return
+            self.config.start_with_windows = requested_startup
         self.config.bark_enabled = self.bark_enabled.isChecked()
         self.config.bark_server_url = self.bark_url.text().strip()
         self.config.bark_device_key = self.bark_key.text().strip()

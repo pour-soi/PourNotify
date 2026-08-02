@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.4
+
+- Replaced the application, window, taskbar, tray, notification, and executable identity with a
+  scalable paper-airplane icon and multi-resolution Windows icon assets.
+- Added an explicit `--background` login-startup mode that initializes the resident tray, IPC, and
+  notification services without opening the main window.
+- Added a default-off Windows startup setting that registers one quoted stable executable command,
+  safely refreshes existing PourNotify registration, and preserves normal manual-launch behavior.
+
 ## 1.0.3
 
 - Added JSONL notification diagnostics with rotation and direct log-folder access.

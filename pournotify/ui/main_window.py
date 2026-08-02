@@ -54,9 +54,7 @@ class MainWindow(QMainWindow):
         self.tray = QSystemTrayIcon(icon, self)
         self.tray.setToolTip("PourNotify")
         self.tray.setContextMenu(self._tray_menu())
-        self.tray.activated.connect(
-            lambda reason: self.show() if reason == QSystemTrayIcon.Trigger else None
-        )
+        self.tray.activated.connect(self._tray_activated)
         self.tray.show()
         self.history = HistoryStore(limit=config.history_limit)
         self.sounds = SoundManager()
@@ -252,6 +250,18 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentIndex(index)
         self.nav_buttons[index].setChecked(True)
 
+    def show_and_activate(self) -> None:
+        if self.isMinimized():
+            self.showNormal()
+        else:
+            self.show()
+        self.raise_()
+        self.activateWindow()
+
+    def _tray_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
+        if reason in {QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick}:
+            self.show_and_activate()
+
     def _run_test_case(self, test_case: NotificationTestCase) -> None:
         self.dispatcher.dispatch(test_case.notification)
         if test_case.duplicate:
@@ -271,13 +281,11 @@ class MainWindow(QMainWindow):
 
     def _tray_menu(self) -> QMenu:
         menu = QMenu()
-        dashboard = QAction("Dashboard", self)
-        dashboard.triggered.connect(lambda: (self.navigate(0), self.show()))
-        check = QAction("Check Now", self)
-        check.triggered.connect(self.show)
-        quit_action = QAction("Quit", self)
+        dashboard = QAction("Open PourNotify", self)
+        dashboard.triggered.connect(lambda: (self.navigate(0), self.show_and_activate()))
+        quit_action = QAction("Exit", self)
         quit_action.triggered.connect(QApplication.quit)
-        menu.addActions([dashboard, check, quit_action])
+        menu.addActions([dashboard, quit_action])
         return menu
 
     def _setup_menu_bar(self) -> None:

@@ -3,7 +3,7 @@ a = Analysis(
     ["run_pournotify.py"],
     pathex=["."],
     binaries=[],
-    datas=[("pournotify/resources/pournotify.svg", "pournotify/resources")],
+    datas=[("pournotify/resources", "pournotify/resources")],
     hiddenimports=["PySide6.QtMultimedia"],
     hookspath=[],
     runtime_hooks=[],

@@ -6,6 +6,7 @@ from PySide6.QtCore import QObject
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 
 SERVER_NAME = "PourNotify-v1-notifications"
+CONTROL_PREFIX = "pournotify-control:"
 
 
 def send_to_running_instance(
@@ -13,6 +14,20 @@ def send_to_running_instance(
     timeout_ms: int = 750,
     server_name: str = SERVER_NAME,
 ) -> bool:
+    return _send_to_running_instance(payload, timeout_ms, server_name)
+
+
+def send_control_to_running_instance(
+    command: str,
+    timeout_ms: int = 750,
+    server_name: str = SERVER_NAME,
+) -> bool:
+    if command not in {"ping", "show"}:
+        raise ValueError(f"Unsupported PourNotify control command: {command}")
+    return _send_to_running_instance(CONTROL_PREFIX + command, timeout_ms, server_name)
+
+
+def _send_to_running_instance(payload: str, timeout_ms: int, server_name: str) -> bool:
     socket = QLocalSocket()
     socket.connectToServer(server_name)
     if not socket.waitForConnected(timeout_ms):
@@ -30,11 +45,13 @@ class NotificationIpcServer(QObject):
     def __init__(
         self,
         handler: Callable[[str], None],
+        control_handler: Callable[[str], None] | None = None,
         parent: QObject | None = None,
         server_name: str = SERVER_NAME,
     ):
         super().__init__(parent)
         self.handler = handler
+        self.control_handler = control_handler
         self.server_name = server_name
         self.server = QLocalServer(self)
         self.connections: set[QLocalSocket] = set()
@@ -58,7 +75,10 @@ class NotificationIpcServer(QObject):
                 "utf-8", errors="replace"
             )
             if payload:
-                self.handler(payload)
+                if payload.startswith(CONTROL_PREFIX) and self.control_handler is not None:
+                    self.control_handler(payload.removeprefix(CONTROL_PREFIX))
+                else:
+                    self.handler(payload)
             connection.disconnectFromServer()
 
     def _discard(self, connection: QLocalSocket) -> None:
