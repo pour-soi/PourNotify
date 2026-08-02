@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:xlink="http://www.w3.org/1999/xlink"
+     width="1280" height="640" viewBox="0 0 1280 640">
+  <rect width="1280" height="640" fill="#F4F7FB"/>
+  <image x="96" y="128" width="384" height="384"
+         href="../../pournotify/resources/icons/pournotify-256.png"
+         xlink:href="../../pournotify/resources/icons/pournotify-256.png"/>
+  <text x="544" y="296" fill="#10223E"
+        font-family="Segoe UI, Arial, sans-serif" font-size="82" font-weight="700">PourNotify</text>
+  <text x="548" y="362" fill="#405575"
+        font-family="Segoe UI, Arial, sans-serif" font-size="36" font-weight="400">Local-first notifications for Codex</text>
+</svg>
