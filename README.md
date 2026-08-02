@@ -1,25 +1,27 @@
-<div align="center">
+<p align="center">
+  <img src="pournotify/resources/icons/pournotify-128.png" width="96" alt="PourNotify">
+</p>
 
-<img src="pournotify/resources/icons/pournotify-128.png" width="112" height="112" alt="PourNotify paper-airplane icon">
+<h1 align="center">PourNotify</h1>
 
-# PourNotify
+<p align="center">
+  Local-first desktop, sound, Bark, and History notifications for Codex.
+</p>
 
-### Local-first desktop, sound, Bark, and History notifications for Codex.
+<p align="center">
+  <a href="https://github.com/pour-soi/PourNotify/releases/tag/v1.0.4"><img alt="Latest Release" src="https://img.shields.io/github/v/release/pour-soi/PourNotify?display_name=tag&amp;sort=semver"></a>
+  <a href="#download"><img alt="Windows" src="https://img.shields.io/badge/Windows-supported-3578E5?logo=windows&amp;logoColor=white"></a>
+  <a href="#project-status"><img alt="macOS" src="https://img.shields.io/badge/macOS-CI_build-6B7280?logo=apple&amp;logoColor=white"></a>
+  <a href="https://github.com/pour-soi/PourNotify/actions/workflows/build.yml"><img alt="CI" src="https://github.com/pour-soi/PourNotify/actions/workflows/build.yml/badge.svg"></a>
+  <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/License-MIT-2E7D32.svg"></a>
+</p>
 
-[![Latest release](https://img.shields.io/github/v/release/pour-soi/PourNotify?display_name=tag&sort=semver)](https://github.com/pour-soi/PourNotify/releases/tag/v1.0.4)
-[![Build](https://github.com/pour-soi/PourNotify/actions/workflows/build.yml/badge.svg)](https://github.com/pour-soi/PourNotify/actions/workflows/build.yml)
-[![Windows](https://img.shields.io/badge/Windows-supported-3578E5?logo=windows&logoColor=white)](#download)
-[![macOS](https://img.shields.io/badge/macOS-CI_build-6B7280?logo=apple&logoColor=white)](#project-status)
-[![MIT License](https://img.shields.io/badge/License-MIT-2E7D32.svg)](LICENSE)
-
-[Latest release](https://github.com/pour-soi/PourNotify/releases/tag/v1.0.4) ·
-[Windows download](https://github.com/pour-soi/PourNotify/releases/download/v1.0.4/PourNotify-v1.0.4-Windows.exe) ·
-[Source code](https://github.com/pour-soi/PourNotify/tree/v1.0.4) ·
-[Quick start](#quick-start) ·
-[Codex integration](#codex-integration) ·
-[History & diagnostics](#history-and-diagnostics)
-
-</div>
+<p align="center">
+  <a href="https://github.com/pour-soi/PourNotify/releases/download/v1.0.4/PourNotify-v1.0.4-Windows.exe">Download</a> •
+  <a href="https://github.com/pour-soi/PourNotify/releases/tag/v1.0.4">Releases</a> •
+  <a href="#quick-start">Documentation</a> •
+  <a href="https://github.com/pour-soi/PourNotify/tree/v1.0.4">Source Code</a>
+</p>
 
 ![PourNotify dashboard showing Codex, Bark, desktop, History, and Diagnostics status](docs/images/pournotify-dashboard.jpg)
 
@@ -34,27 +36,20 @@
 
 ## Overview
 
-Codex invokes a notification hook when a task completes. PourNotify accepts that event from a
-short-lived local process or an already-running instance over Qt local IPC, classifies it, and
-routes it through the channels enabled for that category. Desktop banners, sound, Bark, and local
-History all use the same dispatcher, so a test notification follows the same delivery path as a
-real Codex completion.
+PourNotify receives Codex completion events and routes them through the channels enabled for each
+category. Notification Test uses the same dispatcher as real Codex completions.
 
-PourNotify is local-first: configuration, History, and diagnostics stay on the computer. There is
-no PourNotify account or hosted backend.
+Configuration, History, and diagnostics stay on your computer. PourNotify has no hosted backend or
+account requirement.
 
 ## Features
 
-| Area | What is available |
+| | |
 | --- | --- |
-| Delivery | Native desktop notifications, configurable sounds, Bark delivery, and local History |
-| Controls | Independent category enablement, delivery channels, sound selection, volume, and priority |
-| Focus | Quiet hours, critical-event exceptions, cooldowns, rate limits, and duplicate suppression or merging |
-| History | Search, copy, full notification details, duplicate counts, and JSON or CSV export |
-| Validation | Built-in notification test cases that use the production dispatcher |
-| Reliability | Single-instance Qt IPC with a temporary-process fallback when the resident app is not running |
-| Diagnostics | Rotating JSONL delivery diagnostics with Bark credentials redacted |
-| Appearance | System, light, and dark themes with the same navigation and information layout |
+| **Desktop Notifications**<br>Native banners and Notification Center entries. | **Bark Delivery**<br>HTTPS pushes through your configured Bark server. |
+| **Notification History**<br>Search, copy, inspect, and export local records. | **Quiet Hours**<br>Control interruptions with critical-event exceptions. |
+| **IPC**<br>Single-resident routing for Codex and second-process events. | **Diagnostics**<br>Rotating JSONL logs with Bark credentials redacted. |
+| **Custom Sounds**<br>Choose sound and volume independently by category. | **Background Startup**<br>Start silently at login and remain available in the tray. |
 
 ## Download
 
@@ -69,12 +64,10 @@ The latest stable release is **v1.0.4**.
 ## Quick start
 
 1. Download and launch the latest Windows release.
-2. Open **Settings** and choose the desktop, sound, Bark, and History behavior you want.
-3. Optionally enable **Start PourNotify automatically when I sign in**. Login startup runs silently
-   in the background and keeps PourNotify available from the system tray.
-4. If using Bark, enter your HTTPS Bark server and device key locally in PourNotify.
-5. Connect the global Codex notification hook using the example below.
-6. Use **Notification Test**, then complete a real Codex task to verify the full route.
+2. Configure desktop, sound, History, and optional Bark delivery in **Settings**.
+3. Optionally enable **Start PourNotify automatically when I sign in** for silent tray startup.
+4. Connect the global Codex notification hook using the example below.
+5. Run **Notification Test**, then complete a Codex task to verify delivery.
 
 When PourNotify is already running, launching it normally opens the existing window. Login startup
 does not open the window or create a second resident.
