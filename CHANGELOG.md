@@ -2,8 +2,8 @@
 
 ## 1.0.4
 
-- Replaced the application, window, taskbar, tray, notification, and executable identity with a
-  scalable paper-airplane icon and multi-resolution Windows icon assets.
+- Replaced the application, window, taskbar, tray, notification, and executable identity with the
+  owner-approved paper-airplane artwork and multi-resolution Windows icon assets.
 - Added an explicit `--background` login-startup mode that initializes the resident tray, IPC, and
   notification services without opening the main window.
 - Added a default-off Windows startup setting that registers one quoted stable executable command,

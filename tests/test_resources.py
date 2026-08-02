@@ -10,6 +10,8 @@ from pournotify.resources import application_icon, resource_path
 
 def test_application_icon_is_resolvable_and_non_null():
     assert resource_path("pournotify.svg").is_file()
+    assert resource_path("pournotify-source.jpg").is_file()
+    assert resource_path("icons/pournotify-256.png").is_file()
     app = QApplication.instance() or QApplication([])
     assert app is not None
     tray = QSystemTrayIcon(application_icon())
@@ -17,12 +19,14 @@ def test_application_icon_is_resolvable_and_non_null():
 
 
 def test_application_icon_resolves_from_frozen_bundle(monkeypatch, tmp_path):
-    bundled = tmp_path / "pournotify" / "resources"
+    bundled = tmp_path / "pournotify" / "resources" / "icons"
     bundled.mkdir(parents=True)
-    shutil.copyfile(resource_path("pournotify.svg"), bundled / "pournotify.svg")
+    shutil.copyfile(
+        resource_path("icons/pournotify-256.png"), bundled / "pournotify-256.png"
+    )
     monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path), raising=False)
 
-    assert resource_path("pournotify.svg") == bundled / "pournotify.svg"
+    assert resource_path("icons/pournotify-256.png") == bundled / "pournotify-256.png"
     assert not application_icon().isNull()
 
 

@@ -12,7 +12,7 @@ def resource_path(name: str) -> Path:
 
 
 def application_icon() -> QIcon:
-    icon = QIcon(str(resource_path("pournotify.svg")))
+    icon = QIcon(str(resource_path("icons/pournotify-256.png")))
     if icon.isNull():
         raise RuntimeError("PourNotify application icon could not be loaded.")
     return icon

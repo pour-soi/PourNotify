@@ -3,27 +3,24 @@ from __future__ import annotations
 import struct
 from pathlib import Path
 
-from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QRectF, QSize
-from PySide6.QtGui import QImage, QPainter
-from PySide6.QtSvg import QSvgRenderer
+from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QSize, Qt
+from PySide6.QtGui import QImage
 
 SIZES = (16, 20, 24, 32, 48, 64, 128, 256)
 ROOT = Path(__file__).resolve().parents[1]
-SVG = ROOT / "pournotify" / "resources" / "pournotify.svg"
-OUTPUT = SVG.parent / "icons"
-ICO = SVG.parent / "pournotify.ico"
+RESOURCES = ROOT / "pournotify" / "resources"
+SOURCE = RESOURCES / "pournotify-source.jpg"
+OUTPUT = RESOURCES / "icons"
+ICO = RESOURCES / "pournotify.ico"
 
 
 def render_png(size: int) -> bytes:
-    renderer = QSvgRenderer(str(SVG))
-    if not renderer.isValid():
-        raise RuntimeError(f"Unable to load {SVG}")
-    image = QImage(QSize(size, size), QImage.Format_ARGB32)
-    image.fill(0)
-    painter = QPainter(image)
-    painter.setRenderHint(QPainter.Antialiasing)
-    renderer.render(painter, QRectF(0, 0, size, size))
-    painter.end()
+    source = QImage(str(SOURCE))
+    if source.isNull():
+        raise RuntimeError(f"Unable to load {SOURCE}")
+    image = source.scaled(
+        QSize(size, size), Qt.IgnoreAspectRatio, Qt.SmoothTransformation
+    ).convertToFormat(QImage.Format_ARGB32)
     data = QByteArray()
     buffer = QBuffer(data)
     buffer.open(QIODevice.WriteOnly)
