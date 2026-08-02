@@ -7,7 +7,7 @@
 PourNotify turns Codex completion events into useful desktop, sound, Bark, and History
 notifications. It runs on your computer and does not require a PourNotify cloud service.
 
-[Latest release](https://github.com/pour-soi/PourNotify/releases/latest) | [Download for Windows](https://github.com/pour-soi/PourNotify/releases/download/v1.0.3/PourNotify-v1.0.3-Windows.exe)
+[Latest release](https://github.com/pour-soi/PourNotify/releases/latest) | [Download for Windows](https://github.com/pour-soi/PourNotify/releases/download/v1.0.4/PourNotify-v1.0.4-Windows.exe)
 
 [![Latest release](https://img.shields.io/github/v/release/pour-soi/PourNotify?display_name=tag&sort=semver)](https://github.com/pour-soi/PourNotify/releases/latest)
 [![Build](https://github.com/pour-soi/PourNotify/actions/workflows/build.yml/badge.svg)](https://github.com/pour-soi/PourNotify/actions/workflows/build.yml)
@@ -44,13 +44,13 @@ no PourNotify account or hosted backend.
 
 ## Download
 
-The latest stable release is **v1.0.3**.
+The latest stable release is **v1.0.4**.
 
-- **Windows:** download [`PourNotify-v1.0.3-Windows.exe`](https://github.com/pour-soi/PourNotify/releases/download/v1.0.3/PourNotify-v1.0.3-Windows.exe).
+- **Windows:** download [`PourNotify-v1.0.4-Windows.exe`](https://github.com/pour-soi/PourNotify/releases/download/v1.0.4/PourNotify-v1.0.4-Windows.exe).
 - **All releases:** visit [GitHub Releases](https://github.com/pour-soi/PourNotify/releases).
 - The automatically generated source archives are source code, not the normal Windows executable.
 - Windows and macOS builds pass in CI. Physical macOS runtime validation is still pending, and the
-  v1.0.3 release currently publishes only the Windows executable.
+  v1.0.4 release currently publishes only the Windows executable.
 
 ## Quick start
 
@@ -168,7 +168,7 @@ Build output is written to `dist/`. The same test, Ruff, and PyInstaller command
 
 ## Project status
 
-- Latest stable release: **v1.0.3**
+- Latest stable release: **v1.0.4**
 - Windows runtime validation: complete
 - Windows toast, Notification Center retention, sound, Bark, History, Diagnostics, and IPC:
   validated
