@@ -1,51 +1,188 @@
+<div align="center">
+
 # PourNotify
 
-PourNotify is a lightweight, local-first Windows and macOS notification center for Codex.
-It supports native desktop notifications, Bark delivery to iPhone, per-category sounds,
-quiet hours, notification history, and anti-spam controls. No telemetry, cloud backend,
-browser cookies, or conversation storage are used.
+### Local-first desktop and Bark notifications for Codex
 
-## Run
+PourNotify turns Codex completion events into useful desktop, sound, Bark, and History
+notifications. It runs on your computer and does not require a PourNotify cloud service.
 
-Requires Python 3.11 or newer:
+[Latest release](https://github.com/pour-soi/PourNotify/releases/latest) | [Download for Windows](https://github.com/pour-soi/PourNotify/releases/download/v1.0.3/PourNotify-v1.0.3-Windows.exe)
 
-```powershell
-python -m pip install -e ".[dev]"
-python -m pournotify
+[![Latest release](https://img.shields.io/github/v/release/pour-soi/PourNotify?display_name=tag&sort=semver)](https://github.com/pour-soi/PourNotify/releases/latest)
+[![Build](https://github.com/pour-soi/PourNotify/actions/workflows/build.yml/badge.svg)](https://github.com/pour-soi/PourNotify/actions/workflows/build.yml)
+[![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![MIT License](https://img.shields.io/badge/License-MIT-2E7D32.svg)](LICENSE)
+
+</div>
+
+![PourNotify dashboard showing Codex, Bark, desktop, History, and Diagnostics status](docs/images/pournotify-dashboard.jpg)
+
+## Overview
+
+Codex invokes a notification hook when a task completes. PourNotify accepts that event from a
+short-lived local process or an already-running instance over Qt local IPC, classifies it, and
+routes it through the channels enabled for that category. Desktop banners, sound, Bark, and local
+History all use the same dispatcher, so a test notification follows the same delivery path as a
+real Codex completion.
+
+PourNotify is local-first: configuration, History, and diagnostics stay on the computer. There is
+no PourNotify account or hosted backend.
+
+## Features
+
+| Area | What is available |
+| --- | --- |
+| Delivery | Native desktop notifications, configurable sounds, Bark delivery, and local History |
+| Controls | Independent category enablement, delivery channels, sound selection, volume, and priority |
+| Focus | Quiet hours, critical-event exceptions, cooldowns, rate limits, and duplicate suppression or merging |
+| History | Search, copy, full notification details, duplicate counts, and JSON or CSV export |
+| Validation | Built-in notification test cases that use the production dispatcher |
+| Reliability | Single-instance Qt IPC with a temporary-process fallback when the resident app is not running |
+| Diagnostics | Rotating JSONL delivery diagnostics with Bark credentials redacted |
+| Appearance | System, light, and dark themes with the same navigation and information layout |
+
+## Download
+
+The latest stable release is **v1.0.3**.
+
+- **Windows:** download [`PourNotify-v1.0.3-Windows.exe`](https://github.com/pour-soi/PourNotify/releases/download/v1.0.3/PourNotify-v1.0.3-Windows.exe).
+- **All releases:** visit [GitHub Releases](https://github.com/pour-soi/PourNotify/releases).
+- The automatically generated source archives are source code, not the normal Windows executable.
+- Windows and macOS builds pass in CI. Physical macOS runtime validation is still pending, and the
+  v1.0.3 release currently publishes only the Windows executable.
+
+## Quick start
+
+1. Download and launch the latest Windows release.
+2. Open **Settings** and choose the desktop, sound, Bark, and History behavior you want.
+3. If using Bark, enter your HTTPS Bark server and device key locally in PourNotify.
+4. Connect the global Codex notification hook using the example below.
+5. Use **Notification Test**, then complete a real Codex task to verify the full route.
+
+The packaged Windows application does not require a separate Python installation.
+
+## Codex integration
+
+PourNotify accepts one CLI argument: `--notify <Codex JSON payload>`. A stable installation path is
+important because Codex invokes that executable after every supported event.
+
+If Codex already uses the `codex-computer-use` `turn-ended` wrapper, keep the wrapper and set
+PourNotify as its previous notification command. In the global Codex `config.toml`, preserve the
+existing wrapper path and use this structure:
+
+```toml
+notify = [
+  "<CODEX_COMPUTER_USE_PATH>",
+  "turn-ended",
+  "--previous-notify",
+  "[\"<POURNOTIFY_INSTALL_PATH>\\\\PourNotify.exe\",\"--notify\"]",
+]
 ```
 
-Codex can call the same production pipeline using:
+Replace both placeholders with stable local paths. On Windows, a suitable PourNotify location is
+under `%LOCALAPPDATA%\Programs\PourNotify`; do not point the hook at a project's temporary `dist`
+directory.
 
-```text
-python -m pournotify --notify <Codex JSON payload>
-```
+The wrapper preserves Codex's existing turn-completion handling and forwards the payload to
+PourNotify. Keep Bark configured inside PourNotify rather than adding a second independent Bark
+notification script, which would duplicate deliveries.
 
-Configure that command as Codex's `notify` command using an absolute Python executable and
-absolute project path. Unknown or malformed future event types are ignored safely.
+When PourNotify is already resident, the temporary invocation sends the JSON payload to it through
+local Qt IPC and exits. If no resident process accepts the connection, the invocation starts a
+hidden temporary instance, processes the same payload locally, and exits after delivery.
 
-When the desktop app is already running, notify invocations forward payloads over local Qt IPC.
-When it is stopped, a hidden transient instance dispatches the event and exits. Persisted
-deduplication prevents repeated callbacks from creating multiple history entries. Bark delivery
-must remain inside PourNotify; do not configure a second Bark script in the Codex notify chain.
+> PourNotify currently parses Codex `agent-turn-complete` hook events. Other payload types are
+> recorded as unsupported diagnostics rather than presented as supported external notifications.
 
 ## Notification controls
 
-Every notification category independently controls enabled state, Bark, desktop, sound,
-history, selected sound, volume, and priority. Quiet hours preserve desktop banners while
-muting sound; critical and explicitly configured exceptions can bypass quiet hours.
+Each notification category keeps its own settings for:
 
-History uses bounded plain-text previews while preserving the complete original notification.
-Each entry has priority and duplicate-count labels, full selectable details, one-click Copy,
-full-content search, and lossless JSON or CSV export.
+- enabled state;
+- desktop, Bark, sound, and History delivery;
+- selected sound and volume;
+- priority.
 
-The Notification Test tab simulates supported events through the exact dispatcher used by
-Codex and quota providers.
+Global settings add quiet hours, Bark silence during quiet hours, critical-event exceptions,
+cooldowns, per-minute limits, and duplicate suppression or merging. The current application ships
+with 13 configurable categories; the names are intentionally left to the UI because they are
+application configuration rather than a promised public API.
 
-## Build
+## History and diagnostics
+
+History is stored locally and can be searched, copied, cleared, or exported as JSON or CSV. It
+preserves the complete notification message while the desktop and Bark presentation may use a
+shorter delivery preview.
+
+**Help > Open Notification Diagnostics** opens the local diagnostics directory. Each received hook
+event produces a JSONL record containing its source, dispatch status, channel attempts and results,
+HTTP status, duration, and any exception. Logs rotate automatically and never include the configured
+Bark device key.
+
+## Privacy
+
+- PourNotify has no hosted backend, user account, telemetry, or browser cookies.
+- Configuration, notification History, and diagnostic logs remain in the local application-data
+  directory unless you explicitly export History.
+- PourNotify does not collect or store full Codex conversations. It does store the notification
+  content supplied by the Codex hook in local History, and diagnostics retain the received event
+  payload for troubleshooting.
+- Bark delivery sends the notification title and body to the HTTPS Bark server you configure.
+- The Bark device key is stored in local configuration. Never commit that file or paste the key into
+  issues, logs, screenshots, or examples.
+- Bark responses are redacted before diagnostics are written, and automated coverage verifies that
+  the device key is absent from diagnostic records.
+
+## Development
+
+PourNotify requires Python 3.11 or newer for source development.
 
 ```powershell
-./scripts/build.ps1
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -e ".[dev]"
 ```
 
-Windows builds are produced locally in `dist/`. The GitHub workflow prepares both Windows and
-macOS builds; a macOS artifact must only be claimed after the macOS job actually succeeds.
+Run the application from source:
+
+```powershell
+python -m pournotify
+```
+
+Run the repository checks:
+
+```powershell
+python -m ruff check .
+python -m pytest
+```
+
+Create a clean PyInstaller build (the script runs the full test suite first):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\build.ps1
+```
+
+Build output is written to `dist/`. The same test, Ruff, and PyInstaller commands run on
+`windows-latest` and `macos-latest` in GitHub Actions.
+
+## Project status
+
+- Latest stable release: **v1.0.3**
+- Windows runtime validation: complete
+- Windows toast, Notification Center retention, sound, Bark, History, Diagnostics, and IPC:
+  validated
+- Windows and macOS CI jobs: passing
+- Physical macOS runtime validation: pending
+
+## Contributing
+
+1. Fork the repository.
+2. Create a focused branch for the change.
+3. Keep the diff scoped and add or update meaningful tests when behavior changes.
+4. Run Ruff and the full pytest suite.
+5. Open a pull request describing the change and its validation.
+
+## License
+
+PourNotify is available under the [MIT License](LICENSE).
