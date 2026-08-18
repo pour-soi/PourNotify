@@ -30,9 +30,14 @@ class NotificationTestCase:
 def notification_test_cases() -> tuple[NotificationTestCase, ...]:
     codex = parse_codex_event({
         "type": "agent-turn-complete",
-        "cwd": "PourNotify",
-        "last-assistant-message": "The Codex task completed successfully.",
+        "thread-id": "test-thread",
         "turn-id": "test-codex-complete",
+        "cwd": "PourNotify",
+        "input-messages": ["Inspect PourNotify and report the notification result."],
+        "last-assistant-message": (
+            "The requested PourNotify inspection found the expected notification result and "
+            "preserved unrelated settings."
+        ),
     })
     assert codex is not None
     return (

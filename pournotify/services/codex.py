@@ -4,6 +4,7 @@ from pathlib import PurePosixPath, PureWindowsPath
 from typing import Any
 
 from ..models import Category, Notification
+from .completion import CompletionDecision, classify_completion
 
 
 def _project_name(workspace: Any) -> str:
@@ -18,12 +19,17 @@ def _project_name(workspace: Any) -> str:
     return path.name or "Codex"
 
 
-def parse_codex_event(payload: dict[str, Any]) -> Notification | None:
+def parse_codex_event(
+    payload: dict[str, Any], decision: CompletionDecision | None = None
+) -> Notification | None:
     if payload.get("type") != "agent-turn-complete":
+        return None
+    decision = decision or classify_completion(payload)
+    if not decision.should_notify:
         return None
     workspace = payload.get("cwd") or payload.get("workspace") or ""
     project = _project_name(workspace)
-    message = str(payload.get("last-assistant-message") or "Task completed successfully.")
+    message = str(payload["last-assistant-message"])
     return Notification(
         Category.TASK_COMPLETED, "Codex completed", message, project=project,
         deduplication_id=str(payload.get("turn-id") or ""), system_generated=True,

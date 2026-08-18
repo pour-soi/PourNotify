@@ -7,6 +7,21 @@ from pournotify.models import Category
 from pournotify.services.codex import parse_codex_event
 
 
+def completion_payload(**overrides):
+    payload = {
+        "type": "agent-turn-complete",
+        "thread-id": "thread-sanitized",
+        "turn-id": "turn-sanitized",
+        "input-messages": ["Inspect the repository and report the relevant result."],
+        "last-assistant-message": (
+            "The repository inspection found the requested configuration in the shared "
+            "service, with no unrelated files changed."
+        ),
+    }
+    payload.update(overrides)
+    return payload
+
+
 def test_config_round_trip_and_unknown_keys(tmp_path):
     path = tmp_path / "config.json"
     store = ConfigStore(path)
@@ -20,10 +35,12 @@ def test_config_round_trip_and_unknown_keys(tmp_path):
 
 
 def test_codex_complete_parsing_and_truncation():
-    notice = parse_codex_event({
-        "type": "agent-turn-complete", "cwd": r"F:\work\PourCase",
-        "last-assistant-message": "x" * 600, "turn-id": "turn-1",
-    })
+    notice = parse_codex_event(completion_payload(**{
+        "cwd": r"F:\work\PourCase",
+        "last-assistant-message": "x" * 600,
+        "turn-id": "turn-1",
+    }))
+    assert notice is not None
     assert notice.category == Category.TASK_COMPLETED
     assert notice.project == "PourCase"
     assert len(notice.message) == 600
@@ -44,13 +61,15 @@ def test_codex_complete_parsing_and_truncation():
     ],
 )
 def test_codex_project_name_supports_foreign_path_styles(workspace, expected):
-    notice = parse_codex_event({"type": "agent-turn-complete", "cwd": workspace})
+    notice = parse_codex_event(completion_payload(cwd=workspace))
+    assert notice is not None
     assert notice.project == expected
 
 
 @pytest.mark.parametrize("workspace", ["", "   ", None, 123, "\0invalid"])
 def test_codex_project_name_safely_handles_invalid_input(workspace):
-    notice = parse_codex_event({"type": "agent-turn-complete", "cwd": workspace})
+    notice = parse_codex_event(completion_payload(cwd=workspace))
+    assert notice is not None
     assert notice.project == "Codex"
 
 

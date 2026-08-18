@@ -46,6 +46,48 @@ def _event_name(payload: object) -> object:
     return ""
 
 
+def _safe_received_payload(received_payload: object) -> object:
+    if not isinstance(received_payload, dict):
+        return {"payload_type": type(received_payload).__name__}
+    safe = {
+        key: received_payload[key]
+        for key in (
+            "type",
+            "event",
+            "event_type",
+            "thread-id",
+            "turn-id",
+            "cwd",
+            "workspace",
+            "client",
+            "project",
+        )
+        if key in received_payload
+    }
+    messages = received_payload.get("input-messages")
+    safe["input-message-count"] = len(messages) if isinstance(messages, list) else 0
+    assistant_message = received_payload.get("last-assistant-message")
+    safe["last-assistant-message-length"] = (
+        len(assistant_message) if isinstance(assistant_message, str) else 0
+    )
+    return safe
+
+
+def _safe_arguments(arguments: list[str]) -> list[str]:
+    if not arguments:
+        return []
+    executable = arguments[0]
+    windows_path = PureWindowsPath(executable)
+    path = windows_path if windows_path.drive or "\\" in executable else PurePosixPath(executable)
+    safe = [path.name]
+    safe.extend(
+        argument
+        for argument in arguments[1:]
+        if argument in {"--notify", "--observe-notify", "--background"}
+    )
+    return safe
+
+
 class NotificationDiagnostics:
     def __init__(self, path: Path | None = None, max_bytes: int = MAX_LOG_BYTES):
         self.path = path or diagnostics_log_path()
@@ -62,6 +104,7 @@ class NotificationDiagnostics:
         arguments: list[str] | None = None,
     ) -> bool:
         payload = received_payload if isinstance(received_payload, dict) else {}
+        raw_arguments = list(sys.argv if arguments is None else arguments)
         record = {
             "timestamp": datetime.now().astimezone().isoformat(timespec="milliseconds"),
             "event": _event_name(received_payload),
@@ -69,20 +112,29 @@ class NotificationDiagnostics:
             "workspace": payload.get("workspace", ""),
             "cwd": payload.get("cwd", ""),
             "pid": os.getpid(),
-            "arguments": list(sys.argv if arguments is None else arguments),
-            "received_payload": received_payload,
+            "arguments": _safe_arguments(raw_arguments),
+            "received_payload": _safe_received_payload(received_payload),
+            "payload_redacted": True,
+            "thread_id": payload.get("thread-id", ""),
+            "turn_id": payload.get("turn-id", ""),
             "notify_source": notify_source,
             "dispatch_status": trace.dispatch_status,
             "history_attempted": trace.history_attempted,
             "desktop_attempted": trace.desktop_attempted,
+            "sound_attempted": trace.sound_attempted,
             "bark_attempted": trace.bark_attempted,
             "desktop_result": trace.desktop_result,
+            "sound_result": trace.sound_result,
             "bark_result": trace.bark_result,
             "history_result": trace.history_result,
             "http_status": trace.http_status,
             "bark_response": trace.bark_response,
             "duration_ms": round((perf_counter() - started_at) * 1000, 3),
             "exception": exception or trace.exception,
+            "completion_classification": trace.completion_classification,
+            "completion_reason": trace.completion_reason,
+            "classifier_version": trace.classifier_version,
+            "observation_only": trace.observation_only,
             "version": __version__,
         }
         try:
