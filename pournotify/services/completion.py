@@ -148,7 +148,7 @@ INTERMEDIATE_RULES = (
     (
         "work_still_in_progress",
         re.compile(
-            r"\b(?:work|investigation|validation|implementation) is (?:still )?"
+            r"\b(?:work|analysis|investigation|validation|implementation) is (?:still )?"
             r"(?:in progress|underway|continuing)\b",
         ),
     ),
@@ -222,6 +222,8 @@ def _metadata_shape(assistant_message: str) -> str | None:
     keys = set(structured)
     if keys == {"summary"} and isinstance(structured["summary"], str):
         return "structured_summary_output"
+    if keys == {"description"} and isinstance(structured["description"], str):
+        return "structured_description_output"
     if "title" in keys and keys <= {"title", "description"} and all(
         isinstance(value, str) for value in structured.values()
     ):

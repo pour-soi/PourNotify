@@ -104,6 +104,15 @@ def test_known_internal_codex_turns_are_suppressed(input_message, message, reaso
         ),
         (
             (
+                "Count: 6 Sum: 237 Mean: 39.5 Checkpoint: The analysis is still in "
+                "progress. Remaining work: calculate the median, range, and values above "
+                "the mean. Send CONTINUE to proceed."
+            ),
+            CompletionClassification.SUPPRESSED_INTERMEDIATE,
+            "work_still_in_progress",
+        ),
+        (
+            (
                 "Stage 4 stopped at a mandatory condition and is not complete. No destructive "
                 "cleanup was attempted."
             ),
@@ -179,6 +188,16 @@ def test_metadata_output_with_completed_word_remains_suppressed_without_prompt_s
 
     assert decision.classification == CompletionClassification.AMBIGUOUS
     assert decision.reason == "structured_summary_output"
+
+
+def test_description_only_metadata_output_is_suppressed():
+    decision = classify_completion(payload(
+        '{"description":"Concise internal description for the sanitized validation task."}'
+    ))
+
+    assert decision.classification == CompletionClassification.AMBIGUOUS
+    assert decision.reason == "structured_description_output"
+    assert decision.should_notify is False
 
 
 @pytest.mark.parametrize(
