@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
-CLASSIFIER_VERSION = "2"
+CLASSIFIER_VERSION = "3"
 
 
 class CompletionClassification(StrEnum):
@@ -82,6 +82,13 @@ INTERNAL_TURN_SIGNATURES = (
 
 
 WAITING_RULES = (
+    (
+        "approval_required",
+        re.compile(
+            r"\b(?:formal )?(?:owner )?approval is required before "
+            r"(?:i|we) can (?:continue|proceed)\b",
+        ),
+    ),
     (
         "approval_required",
         re.compile(

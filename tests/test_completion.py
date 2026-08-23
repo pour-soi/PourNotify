@@ -155,6 +155,13 @@ def test_real_style_chinese_required_questions_are_suppressed():
             "I need your approval before I can continue with the production operation.",
             "approval_required",
         ),
+        (
+            (
+                "Formal owner approval is required before I can continue. Do you approve "
+                "proceeding with the simulated cutover? The task is not complete."
+            ),
+            "approval_required",
+        ),
     ],
 )
 def test_blocking_owner_actions_notify(message, reason):
