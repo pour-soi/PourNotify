@@ -2,15 +2,20 @@ from datetime import UTC, datetime
 
 from pournotify.config import AppConfig
 from pournotify.models import Category, Notification, Priority
+from pournotify.services.codex import parse_codex_event
+from pournotify.services.delivery import BarkDeliveryResult
 from pournotify.services.dispatcher import NotificationDispatcher
+from pournotify.services.history import HistoryStore
 
 
 class Recorder:
-    def __init__(self):
+    def __init__(self, result=None):
         self.items = []
+        self.result = result
 
     def send(self, *args, **kwargs):
         self.items.append((args, kwargs))
+        return self.result
 
     def add(self, *args, **kwargs):
         self.items.append((args, kwargs))
@@ -105,8 +110,6 @@ def test_delivery_is_truncated_but_history_preserves_original():
 
 
 def test_persisted_deduplication_survives_dispatcher_restart(tmp_path):
-    from pournotify.services.history import HistoryStore
-
     config = AppConfig(cooldown_seconds=30, merge_duplicates=True)
     history = HistoryStore(tmp_path / "history.json")
     now = datetime.now(UTC).replace(microsecond=0)
@@ -125,3 +128,45 @@ def test_persisted_deduplication_survives_dispatcher_restart(tmp_path):
     entries = history.read()
     assert len(entries) == 1
     assert entries[0]["count"] == 2
+
+
+def test_input_required_then_completion_delivers_one_of_each_lifecycle_notice(tmp_path):
+    config = AppConfig(bark_enabled=True, bark_device_key="configured")
+    for category in (Category.INPUT_REQUIRED, Category.TASK_COMPLETED):
+        config.categories[category.value].bark = True
+    history = HistoryStore(tmp_path / "history.json")
+    desktop, sounds = Recorder(), Recorder()
+    bark = Recorder(BarkDeliveryResult(200, '{"code":200}'))
+    service = NotificationDispatcher(config, history, desktop, sounds, bark)
+    base = {
+        "type": "agent-turn-complete",
+        "thread-id": "thread-lifecycle",
+        "input-messages": ["Complete the deployment preparation."],
+    }
+    waiting = parse_codex_event({
+        **base,
+        "turn-id": "turn-waiting",
+        "last-assistant-message": (
+            "I need your target environment before I can continue with the deployment."
+        ),
+    })
+    completed = parse_codex_event({
+        **base,
+        "turn-id": "turn-completed",
+        "last-assistant-message": (
+            "The deployment preparation is complete for the selected target, and the "
+            "configuration has been verified."
+        ),
+    })
+
+    assert waiting is not None and completed is not None
+    assert service.dispatch(waiting).status == "attempted"
+    assert service.dispatch(completed).status == "attempted"
+
+    assert len(desktop.items) == 2
+    assert len(sounds.items) == 2
+    assert len(bark.items) == 2
+    assert [entry["type"] for entry in history.read()] == [
+        Category.INPUT_REQUIRED.value,
+        Category.TASK_COMPLETED.value,
+    ]

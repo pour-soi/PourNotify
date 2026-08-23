@@ -25,6 +25,7 @@ def app_data_dir() -> Path:
 def default_categories() -> dict[str, CategorySettings]:
     settings = {category.value: CategorySettings() for category in Category}
     for category in (Category.TASK_FAILED, Category.APPROVAL_REQUIRED,
+                     Category.INPUT_REQUIRED,
                      Category.QUOTA_EXHAUSTED, Category.UNEXPECTED_QUOTA_RESET):
         settings[category.value].priority = Priority.CRITICAL
     settings[Category.BONUS_QUOTA.value].priority = Priority.HIGH
@@ -46,7 +47,8 @@ class AppConfig:
     quiet_bark_silent: bool = True
     quiet_allow_critical: bool = True
     quiet_exceptions: list[str] = field(default_factory=lambda: [
-        Category.UNEXPECTED_QUOTA_RESET.value, Category.APPROVAL_REQUIRED.value
+        Category.UNEXPECTED_QUOTA_RESET.value, Category.APPROVAL_REQUIRED.value,
+        Category.INPUT_REQUIRED.value,
     ])
     merge_duplicates: bool = True
     cooldown_seconds: int = 30

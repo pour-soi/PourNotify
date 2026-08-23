@@ -16,6 +16,7 @@ class Category(StrEnum):
     TASK_COMPLETED = "task_completed"
     TASK_FAILED = "task_failed"
     APPROVAL_REQUIRED = "approval_required"
+    INPUT_REQUIRED = "input_required"
     TASK_CANCELLED = "task_cancelled"
     QUOTA_RESET = "quota_reset"
     WEEKLY_RESET = "weekly_reset"

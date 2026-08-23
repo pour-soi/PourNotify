@@ -77,6 +77,44 @@ def test_local_ipc_routes_control_without_changing_notification_payloads():
     QLocalServer.removeServer(test_server_name)
 
 
+def test_local_ipc_routes_observation_without_normal_delivery():
+    qt_app = app()
+    received = []
+    observations = []
+    test_server_name = SERVER_NAME + "-observation-pytest"
+    server = NotificationIpcServer(
+        received.append,
+        observation_handler=observations.append,
+        server_name=test_server_name,
+    )
+    payload = '{"type":"agent-turn-complete","turn-id":"observe"}'
+
+    client = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            (
+                "from pournotify.services.ipc import send_observation_to_running_instance;"
+                "import sys;"
+                "raise SystemExit(0 if send_observation_to_running_instance("
+                "sys.argv[2],server_name=sys.argv[1]) else 1)"
+            ),
+            test_server_name,
+            payload,
+        ],
+    )
+    while client.poll() is None:
+        qt_app.processEvents()
+    for _ in range(5):
+        qt_app.processEvents()
+
+    assert client.returncode == 0
+    assert observations == [payload]
+    assert received == []
+    server.server.close()
+    QLocalServer.removeServer(test_server_name)
+
+
 class DispatcherRecorder:
     def __init__(self):
         self.items = []

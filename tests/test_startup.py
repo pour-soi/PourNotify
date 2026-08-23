@@ -57,14 +57,27 @@ class FakeRegistry:
         del self.values[name]
 
 
-def args(*, notify=None, background=False):
-    return argparse.Namespace(notify=notify, background=background)
+def args(*, notify=None, observe_notify=None, background=False):
+    return argparse.Namespace(
+        notify=notify,
+        observe_notify=observe_notify,
+        background=background,
+    )
 
 
 def test_parser_accepts_explicit_background_mode():
     parsed = build_parser().parse_args(["--background"])
     assert parsed.background is True
     assert parsed.notify is None
+    assert parsed.observe_notify is None
+
+
+def test_parser_accepts_observation_mode():
+    parsed = build_parser().parse_args(["--observe-notify", '{"type":"example"}'])
+
+    assert parsed.observe_notify == '{"type":"example"}'
+    assert parsed.notify is None
+    assert parsed.background is False
 
 
 def test_background_and_manual_launch_choose_expected_resident_action(monkeypatch):
@@ -106,6 +119,22 @@ def test_notification_invocation_keeps_payload_forwarding(monkeypatch):
 
     payload = '{"type":"agent-turn-complete"}'
     assert launch_action(args(notify=payload)) == "exit"
+    assert payloads == [payload]
+
+
+def test_observation_invocation_uses_observation_channel(monkeypatch):
+    payloads = []
+    monkeypatch.setattr(
+        "pournotify.main.send_observation_to_running_instance",
+        lambda payload: payloads.append(payload) or True,
+    )
+    monkeypatch.setattr(
+        "pournotify.main.send_to_running_instance",
+        lambda payload: (_ for _ in ()).throw(AssertionError(payload)),
+    )
+
+    payload = '{"type":"agent-turn-complete"}'
+    assert launch_action(args(observe_notify=payload)) == "exit"
     assert payloads == [payload]
 
 

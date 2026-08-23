@@ -40,15 +40,19 @@ def test_system_title_normalization_and_custom_preservation():
         Category.TASK_COMPLETED, "Codex completed", "Body", system_generated=True
     )
     custom = Notification(Category.TASK_COMPLETED, "My Custom Title", "Body")
+    needs_input = Notification(
+        Category.INPUT_REQUIRED, "Input Required", "Body", system_generated=True
+    )
     assert normalize_system_title(system).title == "Codex Task Completed"
     assert normalize_system_title(custom).title == "My Custom Title"
+    assert normalize_system_title(needs_input).title == "Codex Needs Your Input"
     input_required = Notification(
         Category.SYSTEM_EVENTS, "Input Required", "Body", system_generated=True
     )
     unknown = Notification(
         Category.SYSTEM_EVENTS, "Unknown Event", "Body", system_generated=True
     )
-    assert normalize_system_title(input_required).title == "Codex Input Required"
+    assert normalize_system_title(input_required).title == "Codex Needs Your Input"
     assert normalize_system_title(unknown).title == "Unknown Codex Event"
 
 

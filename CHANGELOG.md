@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.5
+
+- Added conservative Codex lifecycle classification: blocked owner-action turns notify through
+  **Codex Needs Your Input** or **Codex Approval Required**, while high-confidence final results
+  notify through **Codex Task Completed**.
+- Suppressed Codex Desktop activity summaries, title generation and updates, UI and description
+  metadata, intermediate analysis, checkpoints, and other clearly in-progress turns.
+- Redacted private prompt and assistant content from notification diagnostics while recording stable
+  lifecycle reasons and per-channel delivery attempts and results.
+- Prevented duplicate lifecycle notifications in the validated input-required-then-completed flow.
+- Codex currently exposes turn-level notify events rather than an explicit task-terminal lifecycle
+  signal, so final-result detection remains intentionally conservative rather than perfect.
+
 ## 1.0.4
 
 - Replaced the application, window, taskbar, tray, notification, and executable identity with the

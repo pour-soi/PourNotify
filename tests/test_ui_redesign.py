@@ -57,7 +57,7 @@ def test_category_editor_preserves_every_category_and_setting(tmp_path, monkeypa
     window, config, _ = make_window(tmp_path, monkeypatch)
     page = window.settings_page
 
-    assert page.table.rowCount() == len(Category) == 13
+    assert page.table.rowCount() == len(Category) == 14
     assert page.table.columnCount() == 5
     assert set(page.category_controls) == set(Category)
     assert set(next(iter(page.category_controls.values()))) == {

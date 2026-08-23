@@ -25,13 +25,19 @@ class DispatchTrace:
     dispatch_status: str = "not_dispatched"
     history_attempted: bool = False
     desktop_attempted: bool = False
+    sound_attempted: bool = False
     bark_attempted: bool = False
     desktop_result: str = "not_attempted"
+    sound_result: str = "not_attempted"
     bark_result: str = "not_attempted"
     history_result: str = "not_attempted"
     http_status: int | None = None
     bark_response: str = ""
     exception: str = ""
+    completion_classification: str = ""
+    completion_reason: str = ""
+    classifier_version: str = ""
+    observation_only: bool = False
 
     def add_exception(self, channel: str, error: Exception) -> None:
         detail = f"{channel}: {type(error).__name__}: {error}"
@@ -117,7 +123,9 @@ class NotificationDispatcher:
                 trace.desktop_result = "error"
                 trace.add_exception("desktop", error)
         if settings.sound and (not quiet or bypass):
+            trace.sound_attempted = True
             self.sounds.play(settings.sound_name, settings.volume, self.config.custom_sounds)
+            trace.sound_result = "attempted_no_exception"
         if settings.bark and self.config.bark_enabled and self.config.bark_device_key:
             trace.bark_attempted = True
             try:

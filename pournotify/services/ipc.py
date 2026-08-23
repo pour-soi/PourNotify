@@ -7,6 +7,7 @@ from PySide6.QtNetwork import QLocalServer, QLocalSocket
 
 SERVER_NAME = "PourNotify-v1-notifications"
 CONTROL_PREFIX = "pournotify-control:"
+OBSERVATION_PREFIX = "pournotify-observation:"
 
 
 def send_to_running_instance(
@@ -25,6 +26,14 @@ def send_control_to_running_instance(
     if command not in {"ping", "show"}:
         raise ValueError(f"Unsupported PourNotify control command: {command}")
     return _send_to_running_instance(CONTROL_PREFIX + command, timeout_ms, server_name)
+
+
+def send_observation_to_running_instance(
+    payload: str,
+    timeout_ms: int = 750,
+    server_name: str = SERVER_NAME,
+) -> bool:
+    return _send_to_running_instance(OBSERVATION_PREFIX + payload, timeout_ms, server_name)
 
 
 def _send_to_running_instance(payload: str, timeout_ms: int, server_name: str) -> bool:
@@ -46,12 +55,14 @@ class NotificationIpcServer(QObject):
         self,
         handler: Callable[[str], None],
         control_handler: Callable[[str], None] | None = None,
+        observation_handler: Callable[[str], None] | None = None,
         parent: QObject | None = None,
         server_name: str = SERVER_NAME,
     ):
         super().__init__(parent)
         self.handler = handler
         self.control_handler = control_handler
+        self.observation_handler = observation_handler
         self.server_name = server_name
         self.server = QLocalServer(self)
         self.connections: set[QLocalSocket] = set()
@@ -77,6 +88,9 @@ class NotificationIpcServer(QObject):
             if payload:
                 if payload.startswith(CONTROL_PREFIX) and self.control_handler is not None:
                     self.control_handler(payload.removeprefix(CONTROL_PREFIX))
+                elif payload.startswith(OBSERVATION_PREFIX):
+                    if self.observation_handler is not None:
+                        self.observation_handler(payload.removeprefix(OBSERVATION_PREFIX))
                 else:
                     self.handler(payload)
             connection.disconnectFromServer()
