@@ -6,13 +6,13 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
-CLASSIFIER_VERSION = "1"
+CLASSIFIER_VERSION = "2"
 
 
 class CompletionClassification(StrEnum):
     HIGH_CONFIDENCE_COMPLETION = "high_confidence_completion"
+    OWNER_ACTION_REQUIRED = "owner_action_required"
     SUPPRESSED_INTERNAL = "suppressed_internal"
-    SUPPRESSED_WAITING = "suppressed_waiting"
     SUPPRESSED_INTERMEDIATE = "suppressed_intermediate"
     AMBIGUOUS = "ambiguous"
 
@@ -25,7 +25,10 @@ class CompletionDecision:
 
     @property
     def should_notify(self) -> bool:
-        return self.classification == CompletionClassification.HIGH_CONFIDENCE_COMPLETION
+        return self.classification in {
+            CompletionClassification.HIGH_CONFIDENCE_COMPLETION,
+            CompletionClassification.OWNER_ACTION_REQUIRED,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,6 +83,13 @@ INTERNAL_TURN_SIGNATURES = (
 
 WAITING_RULES = (
     (
+        "approval_required",
+        re.compile(
+            r"\b(?:need|require|awaiting|waiting for) (?:your )?"
+            r"(?:approval|confirmation|authorization|permission)\b",
+        ),
+    ),
+    (
         "required_user_input",
         re.compile(
             r"\b(?:i|we) (?:still )?(?:need|require) "
@@ -99,13 +109,6 @@ WAITING_RULES = (
         re.compile(
             r"\bplease (?:provide|attach|upload|send|choose|select|answer).{0,160}"
             r"\b(?:before|so) (?:i|we) can (?:continue|proceed|finish)",
-        ),
-    ),
-    (
-        "approval_required",
-        re.compile(
-            r"\b(?:need|require|awaiting|waiting for) (?:your )?"
-            r"(?:approval|confirmation|authorization|permission)\b",
         ),
     ),
     (
@@ -278,7 +281,7 @@ def classify_completion(payload: dict[str, Any]) -> CompletionDecision:
         return CompletionDecision(CompletionClassification.AMBIGUOUS, "reported_non_completion")
     for reason, pattern in WAITING_RULES:
         if pattern.search(normalized_message):
-            return CompletionDecision(CompletionClassification.SUPPRESSED_WAITING, reason)
+            return CompletionDecision(CompletionClassification.OWNER_ACTION_REQUIRED, reason)
 
     for reason, pattern in INTERMEDIATE_RULES:
         if pattern.search(normalized_message):

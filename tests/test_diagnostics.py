@@ -103,6 +103,8 @@ def test_supported_event_records_complete_delivery_diagnostics(tmp_path):
     assert record["completion_classification"] == "high_confidence_completion"
     assert record["completion_reason"] == "substantive_user_facing_result"
     assert record["classifier_version"]
+    assert record["lifecycle_classification"] == "high_confidence_completion"
+    assert record["lifecycle_reason"] == "substantive_user_facing_result"
     assert record["observation_only"] is False
     assert record["duration_ms"] >= 0
     assert record["version"]

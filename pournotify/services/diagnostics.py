@@ -134,6 +134,8 @@ class NotificationDiagnostics:
             "completion_classification": trace.completion_classification,
             "completion_reason": trace.completion_reason,
             "classifier_version": trace.classifier_version,
+            "lifecycle_classification": trace.completion_classification,
+            "lifecycle_reason": trace.completion_reason,
             "observation_only": trace.observation_only,
             "version": __version__,
         }

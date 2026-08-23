@@ -83,7 +83,7 @@ def test_known_internal_codex_turns_are_suppressed(input_message, message, reaso
                 "I need you to provide the target environment before I can continue with the "
                 "deployment investigation."
             ),
-            CompletionClassification.SUPPRESSED_WAITING,
+            CompletionClassification.OWNER_ACTION_REQUIRED,
             "required_user_input",
         ),
         (
@@ -91,7 +91,7 @@ def test_known_internal_codex_turns_are_suppressed(input_message, message, reaso
                 "Preflight checks passed. Please confirm: may I launch the isolated fixture "
                 "and proceed with the UI-driven installation?"
             ),
-            CompletionClassification.SUPPRESSED_WAITING,
+            CompletionClassification.OWNER_ACTION_REQUIRED,
             "approval_required",
         ),
         (
@@ -121,12 +121,14 @@ def test_known_internal_codex_turns_are_suppressed(input_message, message, reaso
         ),
     ],
 )
-def test_confident_non_final_states_are_suppressed(message, classification, reason):
+def test_confident_non_final_lifecycle_states_are_classified(message, classification, reason):
     decision = classify_completion(payload(message))
 
     assert decision.classification == classification
     assert decision.reason == reason
-    assert decision.should_notify is False
+    assert decision.should_notify is (
+        classification == CompletionClassification.OWNER_ACTION_REQUIRED
+    )
 
 
 def test_real_style_chinese_required_questions_are_suppressed():
@@ -134,8 +136,43 @@ def test_real_style_chinese_required_questions_are_suppressed():
         "以下几点会实质影响设计，需要你确认。你可以逐项回答；收到确认后，我会先提交架构方案供你审批。"
     ))
 
-    assert decision.classification == CompletionClassification.SUPPRESSED_WAITING
+    assert decision.classification == CompletionClassification.OWNER_ACTION_REQUIRED
     assert decision.reason == "required_user_input"
+
+
+@pytest.mark.parametrize(
+    ("message", "reason"),
+    [
+        (
+            "I need your target environment before I can continue with the deployment.",
+            "required_user_input",
+        ),
+        (
+            "Please confirm the destination before I can continue with the migration.",
+            "approval_required",
+        ),
+        (
+            "I need your approval before I can continue with the production operation.",
+            "approval_required",
+        ),
+    ],
+)
+def test_blocking_owner_actions_notify(message, reason):
+    decision = classify_completion(payload(message))
+
+    assert decision.classification == CompletionClassification.OWNER_ACTION_REQUIRED
+    assert decision.reason == reason
+    assert decision.should_notify is True
+
+
+def test_completed_result_with_optional_question_is_not_input_required():
+    decision = classify_completion(payload(
+        "The requested configuration review is complete and all relevant settings are "
+        "consistent. Would you like me to also prepare a release note?"
+    ))
+
+    assert decision.classification == CompletionClassification.HIGH_CONFIDENCE_COMPLETION
+    assert decision.reason == "substantive_user_facing_result"
 
 
 @pytest.mark.parametrize(
