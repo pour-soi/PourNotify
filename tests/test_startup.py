@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 
 from pournotify.config import AppConfig
-from pournotify.main import build_parser, launch_action, matches_observation_thread
+from pournotify.main import build_parser, launch_action
 from pournotify.services.startup import (
     RUN_KEY,
     VALUE_NAME,
@@ -57,12 +57,11 @@ class FakeRegistry:
         del self.values[name]
 
 
-def args(*, notify=None, observe_notify=None, background=False, observe_thread_id=None):
+def args(*, notify=None, observe_notify=None, background=False):
     return argparse.Namespace(
         notify=notify,
         observe_notify=observe_notify,
         background=background,
-        observe_thread_id=observe_thread_id,
     )
 
 
@@ -79,33 +78,6 @@ def test_parser_accepts_observation_mode():
     assert parsed.observe_notify == '{"type":"example"}'
     assert parsed.notify is None
     assert parsed.background is False
-
-
-def test_parser_accepts_exact_thread_observation_for_resident_mode():
-    parsed = build_parser().parse_args(
-        ["--background", "--observe-thread-id", "thread-validation-control"]
-    )
-
-    assert parsed.background is True
-    assert parsed.observe_thread_id == "thread-validation-control"
-
-
-def test_exact_thread_observation_does_not_match_other_or_malformed_payloads():
-    observed = "thread-validation-control"
-
-    assert matches_observation_thread(
-        '{"type":"agent-turn-complete","thread-id":"thread-validation-control"}',
-        observed,
-    )
-    assert not matches_observation_thread(
-        '{"type":"agent-turn-complete","thread-id":"thread-under-test"}',
-        observed,
-    )
-    assert not matches_observation_thread("not-json", observed)
-    assert not matches_observation_thread(
-        '{"type":"agent-turn-complete","thread-id":"thread-validation-control"}',
-        None,
-    )
 
 
 def test_background_and_manual_launch_choose_expected_resident_action(monkeypatch):

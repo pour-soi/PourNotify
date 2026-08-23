@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/pour-soi/PourNotify/releases/tag/v1.0.4"><img alt="Latest Release" src="https://img.shields.io/github/v/release/pour-soi/PourNotify?display_name=tag&amp;sort=semver"></a>
+  <a href="https://github.com/pour-soi/PourNotify/releases/tag/v1.0.5"><img alt="Latest Release" src="https://img.shields.io/github/v/release/pour-soi/PourNotify?display_name=tag&amp;sort=semver"></a>
   <a href="#download"><img alt="Windows" src="https://img.shields.io/badge/Windows-supported-3578E5?logo=windows&amp;logoColor=white"></a>
   <a href="#project-status"><img alt="macOS" src="https://img.shields.io/badge/macOS-CI_build-6B7280?logo=apple&amp;logoColor=white"></a>
   <a href="https://github.com/pour-soi/PourNotify/actions/workflows/build.yml"><img alt="CI" src="https://github.com/pour-soi/PourNotify/actions/workflows/build.yml/badge.svg"></a>
@@ -17,22 +17,23 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/pour-soi/PourNotify/releases/download/v1.0.4/PourNotify-v1.0.4-Windows.exe">Download</a> •
-  <a href="https://github.com/pour-soi/PourNotify/releases/tag/v1.0.4">Releases</a> •
+  <a href="https://github.com/pour-soi/PourNotify/releases/download/v1.0.5/PourNotify-v1.0.5-Windows.exe">Download</a> •
+  <a href="https://github.com/pour-soi/PourNotify/releases/tag/v1.0.5">Releases</a> •
   <a href="#quick-start">Documentation</a> •
-  <a href="https://github.com/pour-soi/PourNotify/tree/v1.0.4">Source Code</a>
+  <a href="https://github.com/pour-soi/PourNotify/tree/v1.0.5">Source Code</a>
 </p>
 
 ![PourNotify dashboard showing Codex, Bark, desktop, History, and Diagnostics status](docs/images/pournotify-dashboard.jpg)
 
-## What's new in v1.0.4
+## What's new in v1.0.5
 
-- Introduces the new Pour UI paper-airplane application icon.
-- Adds optional Windows login startup that runs silently without opening or flashing the main window.
-- Prevents duplicate startup launches from creating a second resident, while a normal manual launch
-  still opens the existing application window.
-- Preserves compatibility with existing Codex, IPC, Bark, desktop, sound, History, and Diagnostics
-  behavior.
+- Notifies once when Codex needs required owner input or approval, and once when a later final result
+  is classified as a high-confidence completion.
+- Suppresses internal activity summaries, title and UI metadata, description metadata, intermediate
+  analysis, checkpoints, and other clearly in-progress turns.
+- Keeps diagnostics useful while excluding raw private prompts and assistant output.
+- Uses conservative classification because Codex notify hooks are turn-level events and do not
+  provide an explicit task-terminal lifecycle signal.
 
 ## Overview
 
@@ -53,13 +54,13 @@ account requirement.
 
 ## Download
 
-The latest stable release is **v1.0.4**.
+The latest stable release is **v1.0.5**.
 
-- **Windows:** download [`PourNotify-v1.0.4-Windows.exe`](https://github.com/pour-soi/PourNotify/releases/download/v1.0.4/PourNotify-v1.0.4-Windows.exe).
+- **Windows:** download [`PourNotify-v1.0.5-Windows.exe`](https://github.com/pour-soi/PourNotify/releases/download/v1.0.5/PourNotify-v1.0.5-Windows.exe).
 - **All releases:** visit [GitHub Releases](https://github.com/pour-soi/PourNotify/releases).
 - The automatically generated source archives are source code, not the normal Windows executable.
 - Windows and macOS builds pass in CI. Physical macOS runtime validation is still pending, and the
-  v1.0.4 release currently publishes only the Windows executable.
+  v1.0.5 release currently publishes only the Windows executable.
 
 ## Quick start
 
@@ -104,8 +105,10 @@ When PourNotify is already resident, the temporary invocation sends the JSON pay
 local Qt IPC and exits. If no resident process accepts the connection, the invocation starts a
 hidden temporary instance, processes the same payload locally, and exits after delivery.
 
-> PourNotify currently parses Codex `agent-turn-complete` hook events. Other payload types are
-> recorded as unsupported diagnostics rather than presented as supported external notifications.
+> PourNotify currently parses Codex `agent-turn-complete` hook events. Codex does not provide an
+> explicit task-terminal lifecycle signal in this payload, so PourNotify conservatively classifies
+> each turn as completed, owner action required, internal, intermediate, or ambiguous. Other payload
+> types are recorded as unsupported diagnostics rather than presented as supported notifications.
 
 ## Notification controls
 
@@ -117,9 +120,9 @@ Each notification category keeps its own settings for:
 - priority.
 
 Global settings add quiet hours, Bark silence during quiet hours, critical-event exceptions,
-cooldowns, per-minute limits, and duplicate suppression or merging. The current application ships
-with 13 configurable categories; the names are intentionally left to the UI because they are
-application configuration rather than a promised public API.
+cooldowns, per-minute limits, and duplicate suppression or merging. The current application includes
+14 configurable categories, including separate Task Completed, Approval Required, and Input Required
+controls. Category names remain application configuration rather than a promised public API.
 
 ## History and diagnostics
 
@@ -137,9 +140,9 @@ Bark device key.
 - PourNotify has no hosted backend, user account, telemetry, or browser cookies.
 - Configuration, notification History, and diagnostic logs remain in the local application-data
   directory unless you explicitly export History.
-- PourNotify does not collect or store full Codex conversations. It does store the notification
-  content supplied by the Codex hook in local History, and diagnostics retain the received event
-  payload for troubleshooting.
+- PourNotify does not collect or store full Codex conversations. User-facing notification content is
+  stored locally in History when that category is enabled. Diagnostics store structural event fields,
+  classification reasons, and delivery results without raw prompts or assistant output.
 - Bark delivery sends the notification title and body to the HTTPS Bark server you configure.
 - The Bark device key is stored in local configuration. Never commit that file or paste the key into
   issues, logs, screenshots, or examples.
@@ -180,7 +183,7 @@ Build output is written to `dist/`. The same test, Ruff, and PyInstaller command
 
 ## Project status
 
-- Latest stable release: **v1.0.4**
+- Latest stable release: **v1.0.5**
 - Windows runtime validation: complete
 - Silent Windows login startup and single-resident behavior: validated
 - Windows toast, Notification Center retention, sound, Bark, History, Diagnostics, and IPC:

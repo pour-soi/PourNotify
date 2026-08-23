@@ -106,19 +106,6 @@ def dispatch_codex_payload(
     return result
 
 
-def matches_observation_thread(payload: str, observed_thread_id: str | None) -> bool:
-    if not observed_thread_id:
-        return False
-    try:
-        received_payload = json.loads(payload)
-    except (TypeError, ValueError, json.JSONDecodeError):
-        return False
-    return (
-        isinstance(received_payload, dict)
-        and received_payload.get("thread-id") == observed_thread_id
-    )
-
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     mode = parser.add_mutually_exclusive_group()
@@ -131,10 +118,6 @@ def build_parser() -> argparse.ArgumentParser:
         "--background",
         action="store_true",
         help="Start resident notification services without opening the main window",
-    )
-    parser.add_argument(
-        "--observe-thread-id",
-        help="Route one exact thread through diagnostics-only observation while resident",
     )
     return parser
 
@@ -178,18 +161,13 @@ def main(argv: list[str] | None = None) -> int:
             LOGGER.warning("Unable to refresh Windows startup registration: %s", error)
     window = MainWindow(config, store)
 
-    def handle_ipc_payload(payload: str) -> bool:
-        observation_only = matches_observation_thread(payload, args.observe_thread_id)
-        return dispatch_codex_payload(
+    NotificationIpcServer(
+        lambda payload: dispatch_codex_payload(
             window,
             payload,
             diagnostics,
-            notify_source="observation_thread_ipc" if observation_only else "ipc",
-            observation_only=observation_only,
-        )
-
-    NotificationIpcServer(
-        handle_ipc_payload,
+            notify_source="ipc",
+        ),
         control_handler=lambda command: window.show_and_activate()
         if command == "show"
         else None,
