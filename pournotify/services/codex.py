@@ -4,40 +4,26 @@ from pathlib import PurePosixPath, PureWindowsPath
 from typing import Any
 
 from ..models import Category, Notification
-from .completion import (
-    CompletionClassification,
-    CompletionDecision,
-    classify_completion,
+from .attention import (
+    AttentionDecision,
+    AttentionReason,
+    classify_attention,
 )
 
-OWNER_ACTION_CONTENT = {
-    "approval_required": (
+ATTENTION_CONTENT = {
+    AttentionReason.FINISHED: (
+        Category.TASK_COMPLETED,
+        "Task finished and is waiting for your next instruction.",
+    ),
+    AttentionReason.INPUT_REQUIRED: (
+        Category.INPUT_REQUIRED,
+        "Codex needs your input before it can continue.",
+    ),
+    AttentionReason.APPROVAL_REQUIRED: (
         Category.APPROVAL_REQUIRED,
-        "Codex Approval Required",
-        "Codex is waiting for your approval before it can continue.",
-    ),
-    "required_user_input": (
-        Category.INPUT_REQUIRED,
-        "Codex Needs Your Input",
-        "Codex is waiting for required information before it can continue.",
-    ),
-    "request_missing_material": (
-        Category.INPUT_REQUIRED,
-        "Codex Needs Your Input",
-        "Codex is waiting for required material before it can continue.",
+        "Codex needs your approval before it can continue.",
     ),
 }
-
-
-def _owner_action_content(reason: str) -> tuple[Category, str, str]:
-    return OWNER_ACTION_CONTENT.get(
-        reason,
-        (
-            Category.INPUT_REQUIRED,
-            "Codex Needs Your Input",
-            "Codex is waiting for your input or action before it can continue.",
-        ),
-    )
 
 
 def _project_name(workspace: Any) -> str:
@@ -49,31 +35,34 @@ def _project_name(workspace: Any) -> str:
         if windows_path.drive or ("\\" in workspace and "/" not in workspace)
         else PurePosixPath(workspace)
     )
-    return path.name or "Codex"
+    name = " ".join(path.name.split())[:48]
+    return name or "Codex"
 
 
 def parse_codex_event(
-    payload: dict[str, Any], decision: CompletionDecision | None = None
+    payload: dict[str, Any], decision: AttentionDecision | None = None
 ) -> Notification | None:
     if payload.get("type") != "agent-turn-complete":
         return None
-    decision = decision or classify_completion(payload)
-    if not decision.should_notify:
+    decision = decision or classify_attention(payload)
+    if not decision.needs_attention or decision.attention_reason is None:
         return None
     workspace = payload.get("cwd") or payload.get("workspace") or ""
     project = _project_name(workspace)
-    if decision.classification == CompletionClassification.OWNER_ACTION_REQUIRED:
-        category, title, message = _owner_action_content(decision.reason)
-        return Notification(
-            category,
-            title,
-            message,
-            project=project,
-            deduplication_id=str(payload.get("turn-id") or ""),
-            system_generated=True,
-        )
-    message = str(payload["last-assistant-message"])
+    thread_id = str(payload.get("thread-id") or "")
+    turn_id = str(payload.get("turn-id") or "")
+    deduplication_id = f"codex:{thread_id}:{turn_id}"
+    category, message = ATTENTION_CONTENT[decision.attention_reason]
+    title = (
+        "Codex Needs Attention"
+        if project == "Codex"
+        else f"Codex Needs Attention · {project}"
+    )
     return Notification(
-        Category.TASK_COMPLETED, "Codex completed", message, project=project,
-        deduplication_id=str(payload.get("turn-id") or ""), system_generated=True,
+        category,
+        title,
+        message,
+        project=project,
+        deduplication_id=deduplication_id,
+        system_generated=True,
     )

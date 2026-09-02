@@ -6,29 +6,32 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
-CLASSIFIER_VERSION = "3"
+CLASSIFIER_VERSION = "5"
 
 
-class CompletionClassification(StrEnum):
-    HIGH_CONFIDENCE_COMPLETION = "high_confidence_completion"
-    OWNER_ACTION_REQUIRED = "owner_action_required"
+class AttentionState(StrEnum):
+    NEEDS_ATTENTION = "needs_attention"
     SUPPRESSED_INTERNAL = "suppressed_internal"
     SUPPRESSED_INTERMEDIATE = "suppressed_intermediate"
     AMBIGUOUS = "ambiguous"
 
 
+class AttentionReason(StrEnum):
+    FINISHED = "finished"
+    INPUT_REQUIRED = "input_required"
+    APPROVAL_REQUIRED = "approval_required"
+
+
 @dataclass(frozen=True, slots=True)
-class CompletionDecision:
-    classification: CompletionClassification
-    reason: str
+class AttentionDecision:
+    state: AttentionState
+    classification_reason: str
+    attention_reason: AttentionReason | None = None
     classifier_version: str = CLASSIFIER_VERSION
 
     @property
-    def should_notify(self) -> bool:
-        return self.classification in {
-            CompletionClassification.HIGH_CONFIDENCE_COMPLETION,
-            CompletionClassification.OWNER_ACTION_REQUIRED,
-        }
+    def needs_attention(self) -> bool:
+        return self.state == AttentionState.NEEDS_ATTENTION
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,7 +96,7 @@ WAITING_RULES = (
         "approval_required",
         re.compile(
             r"\b(?:need|require|awaiting|waiting for) (?:your )?"
-            r"(?:approval|confirmation|authorization|permission)\b",
+            r"(?:approval|authorization|permission)\b",
         ),
     ),
     (
@@ -121,7 +124,7 @@ WAITING_RULES = (
     (
         "approval_required",
         re.compile(
-            r"\bplease (?:approve|confirm|authorize).{0,120}"
+            r"\bplease (?:approve|authorize).{0,120}"
             r"\b(?:before|so) (?:i|we) (?:continue|proceed|can continue|can proceed)",
         ),
     ),
@@ -130,10 +133,25 @@ WAITING_RULES = (
         re.compile(r"\bplease confirm\s*:\s*(?:may|can|should) i\b"),
     ),
     (
+        "required_confirmation",
+        re.compile(
+            r"\b(?:need|require|awaiting|waiting for) (?:your )?confirmation\b|"
+            r"\bplease confirm.{0,120}\b(?:before|so) (?:i|we) "
+            r"(?:continue|proceed|can continue|can proceed)",
+        ),
+    ),
+    (
         "waiting_for_user_action",
         re.compile(
             r"\b(?:waiting|blocked) (?:for|on) (?:your|the) "
             r"(?:input|answer|response|decision|choice|credentials|access)\b",
+        ),
+    ),
+    (
+        "explicit_continue_gate",
+        re.compile(
+            r"\b(?:send|reply with|type) [a-z0-9_-]{1,40} to "
+            r"(?:continue|proceed)\b",
         ),
     ),
     (
@@ -144,6 +162,44 @@ WAITING_RULES = (
         "approval_required",
         re.compile(r"请确认\s*[:：]?\s*(?:是否|我可以|可否)|等待你的(?:批准|确认|授权)"),
     ),
+)
+
+
+WAITING_ATTENTION_REASONS = {
+    "approval_required": AttentionReason.APPROVAL_REQUIRED,
+    "required_user_input": AttentionReason.INPUT_REQUIRED,
+    "required_confirmation": AttentionReason.INPUT_REQUIRED,
+    "blocked_until_user_action": AttentionReason.INPUT_REQUIRED,
+    "request_missing_material": AttentionReason.INPUT_REQUIRED,
+    "waiting_for_user_action": AttentionReason.INPUT_REQUIRED,
+    "explicit_continue_gate": AttentionReason.INPUT_REQUIRED,
+}
+
+
+DIRECT_APPROVAL_QUESTION = re.compile(
+    r"^(?:do you approve|may i proceed|can i proceed|should i proceed|"
+    r"请(?:批准|确认|授权)|我可以继续吗)\b"
+)
+
+
+DIRECT_INPUT_QUESTION = re.compile(
+    r"^(?:(?:which|what|where|when|who)\b.{0,160}\b(?:should|would|do|can)\b|"
+    r"(?:can|could|would) you (?:provide|choose|select|clarify|attach|upload|send)\b|"
+    r"(?:please )?(?:provide|choose|select|attach|upload|send)\b|"
+    r"(?:请)?(?:提供|选择|上传|附上|告诉我|说明))"
+)
+
+
+DIRECT_APPROVAL_STATEMENT = re.compile(
+    r"^(?:please )?(?:approve|authorize)\b.{0,160}[.!]?$"
+)
+
+
+DIRECT_INPUT_STATEMENT = re.compile(
+    r"^(?:(?:please )?(?:provide|choose|select|attach|upload|send|enter|clarify)\b|"
+    r"(?:i|we) (?:still )?(?:need|require) (?:your |the )?"
+    r"(?:input|answer|response|decision|choice|credentials|access|api key|password|"
+    r"target environment|destination|file|material|value)\b).{0,160}[.!]?$"
 )
 
 
@@ -194,6 +250,18 @@ INTERMEDIATE_RULES = (
 REPORTED_NON_COMPLETION_RULES = (
     re.compile(r"^(?:the )?(?:task|run|operation) (?:failed|was cancelled|was canceled)\b"),
     re.compile(r"^(?:cancelled|canceled)(?:[.: -]|$)"),
+)
+
+
+NEGATED_OWNER_ACTION_RULES = (
+    re.compile(
+        r"\bno (?:owner )?(?:approval|authorization|permission|input|confirmation) "
+        r"is required\b"
+    ),
+    re.compile(
+        r"\b(?:i|we) (?:do not|don't) need (?:your )?"
+        r"(?:approval|authorization|permission|input|confirmation)\b"
+    ),
 )
 
 
@@ -249,61 +317,124 @@ def _question_only(message: str) -> bool:
     return not re.search(r"[.!。！](?:\s|$)|\n", before_question)
 
 
-def _has_unrecognized_trailing_question(message: str) -> bool:
+def _final_question(message: str) -> str:
     stripped = message.rstrip()
     if not stripped.endswith(("?", "？")):
-        return False
-    final_question = re.split(r"[.!。！\n]", stripped)[-1].strip().casefold()
+        return ""
+    return re.split(r"[.!。！\n]", stripped)[-1].strip().casefold().rstrip("?？").strip()
+
+
+def _final_statement(message: str) -> str:
+    statements = [
+        statement.strip()
+        for statement in re.split(r"[.!?。！？\n]", message)
+        if statement.strip()
+    ]
+    return statements[-1] if statements else ""
+
+
+def _is_optional_follow_up(question: str) -> bool:
     optional_starts = (
         "would you like me to ",
+        "would you like anything else",
         "do you want me to ",
+        "is there anything else",
+        "anything else",
         "want me to ",
         "需要我",
     )
-    return not final_question.startswith(optional_starts)
+    return question.startswith(optional_starts)
 
 
-def classify_completion(payload: dict[str, Any]) -> CompletionDecision:
+def _required_question_reason(message: str) -> AttentionReason | None:
+    question = _final_question(message)
+    if not question or _is_optional_follow_up(question):
+        return None
+    if DIRECT_APPROVAL_QUESTION.search(question):
+        return AttentionReason.APPROVAL_REQUIRED
+    if DIRECT_INPUT_QUESTION.search(question):
+        return AttentionReason.INPUT_REQUIRED
+    return None
+
+
+def _direct_request_reason(message: str) -> AttentionReason | None:
+    normalized = _normalized(_final_statement(message))
+    if " if you'd like" in normalized or " if you would like" in normalized:
+        return None
+    if DIRECT_APPROVAL_STATEMENT.fullmatch(normalized):
+        return AttentionReason.APPROVAL_REQUIRED
+    if DIRECT_INPUT_STATEMENT.fullmatch(normalized):
+        return AttentionReason.INPUT_REQUIRED
+    return None
+
+
+def classify_attention(
+    payload: dict[str, Any], *, local_terminal_evidence: bool = False
+) -> AttentionDecision:
     if payload.get("type") != "agent-turn-complete":
-        return CompletionDecision(CompletionClassification.AMBIGUOUS, "unsupported_event")
+        return AttentionDecision(AttentionState.AMBIGUOUS, "unsupported_event")
 
     assistant_value = payload.get("last-assistant-message")
     if not isinstance(assistant_value, str) or not assistant_value.strip():
-        return CompletionDecision(CompletionClassification.AMBIGUOUS, "missing_assistant_result")
+        return AttentionDecision(AttentionState.AMBIGUOUS, "missing_assistant_result")
     assistant_message = assistant_value.strip()
 
     internal_reason = _internal_reason(payload)
     if internal_reason:
-        return CompletionDecision(
-            CompletionClassification.SUPPRESSED_INTERNAL,
+        return AttentionDecision(
+            AttentionState.SUPPRESSED_INTERNAL,
             internal_reason,
         )
 
     metadata_shape = _metadata_shape(assistant_message)
     if metadata_shape:
-        return CompletionDecision(CompletionClassification.AMBIGUOUS, metadata_shape)
+        return AttentionDecision(AttentionState.SUPPRESSED_INTERNAL, metadata_shape)
 
     normalized_message = _normalized(assistant_message)
     if any(pattern.search(normalized_message) for pattern in REPORTED_NON_COMPLETION_RULES):
-        return CompletionDecision(CompletionClassification.AMBIGUOUS, "reported_non_completion")
+        return AttentionDecision(AttentionState.AMBIGUOUS, "reported_non_completion")
+    if any(pattern.search(normalized_message) for pattern in NEGATED_OWNER_ACTION_RULES):
+        return AttentionDecision(
+            AttentionState.SUPPRESSED_INTERMEDIATE,
+            "explicitly_not_waiting_for_owner",
+        )
     for reason, pattern in WAITING_RULES:
         if pattern.search(normalized_message):
-            return CompletionDecision(CompletionClassification.OWNER_ACTION_REQUIRED, reason)
+            return AttentionDecision(
+                AttentionState.NEEDS_ATTENTION,
+                reason,
+                WAITING_ATTENTION_REASONS[reason],
+            )
+
+    direct_request = _direct_request_reason(assistant_message)
+    if direct_request is not None:
+        return AttentionDecision(
+            AttentionState.NEEDS_ATTENTION,
+            "direct_owner_request",
+            direct_request,
+        )
+    required_question = _required_question_reason(assistant_message)
+    if required_question is not None:
+        return AttentionDecision(
+            AttentionState.NEEDS_ATTENTION,
+            "direct_owner_question",
+            required_question,
+        )
 
     for reason, pattern in INTERMEDIATE_RULES:
         if pattern.search(normalized_message):
-            return CompletionDecision(CompletionClassification.SUPPRESSED_INTERMEDIATE, reason)
+            return AttentionDecision(AttentionState.SUPPRESSED_INTERMEDIATE, reason)
     if normalized_message.startswith("checkpoint") and "remaining" in normalized_message:
-        return CompletionDecision(
-            CompletionClassification.SUPPRESSED_INTERMEDIATE,
+        return AttentionDecision(
+            AttentionState.SUPPRESSED_INTERMEDIATE,
             "checkpoint_with_remaining_work",
         )
 
     messages = payload.get("input-messages")
     protocol_ids = (payload.get("thread-id"), payload.get("turn-id"))
     if not all(isinstance(value, str) and value.strip() for value in protocol_ids):
-        return CompletionDecision(
-            CompletionClassification.AMBIGUOUS,
+        return AttentionDecision(
+            AttentionState.AMBIGUOUS,
             "malformed_or_incomplete_payload",
         )
     if (
@@ -311,20 +442,29 @@ def classify_completion(payload: dict[str, Any]) -> CompletionDecision:
         or not messages
         or not all(isinstance(message, str) and message.strip() for message in messages)
     ):
-        return CompletionDecision(CompletionClassification.AMBIGUOUS, "missing_user_context")
+        return AttentionDecision(AttentionState.AMBIGUOUS, "missing_user_context")
+
     if _question_only(assistant_message):
-        return CompletionDecision(CompletionClassification.AMBIGUOUS, "question_only_response")
-    if _has_unrecognized_trailing_question(assistant_message):
-        return CompletionDecision(
-            CompletionClassification.AMBIGUOUS,
+        return AttentionDecision(AttentionState.AMBIGUOUS, "question_only_response")
+    final_question = _final_question(assistant_message)
+    if final_question and not _is_optional_follow_up(final_question):
+        return AttentionDecision(
+            AttentionState.AMBIGUOUS,
             "unrecognized_trailing_question",
         )
 
     significant_characters = sum(character.isalnum() for character in assistant_message)
     if significant_characters < 24:
-        return CompletionDecision(CompletionClassification.AMBIGUOUS, "insufficient_substance")
+        if local_terminal_evidence:
+            return AttentionDecision(
+                AttentionState.NEEDS_ATTENTION,
+                "validated_local_task_stop",
+                AttentionReason.FINISHED,
+            )
+        return AttentionDecision(AttentionState.AMBIGUOUS, "insufficient_substance")
 
-    return CompletionDecision(
-        CompletionClassification.HIGH_CONFIDENCE_COMPLETION,
-        "substantive_user_facing_result",
+    return AttentionDecision(
+        AttentionState.NEEDS_ATTENTION,
+        "substantive_user_facing_stop",
+        AttentionReason.FINISHED,
     )

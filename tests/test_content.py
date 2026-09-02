@@ -43,16 +43,23 @@ def test_system_title_normalization_and_custom_preservation():
     needs_input = Notification(
         Category.INPUT_REQUIRED, "Input Required", "Body", system_generated=True
     )
-    assert normalize_system_title(system).title == "Codex Task Completed"
+    qualified = Notification(
+        Category.TASK_COMPLETED,
+        "Codex Needs Attention · PourInput",
+        "Body",
+        system_generated=True,
+    )
+    assert normalize_system_title(system).title == "Codex Needs Attention"
     assert normalize_system_title(custom).title == "My Custom Title"
-    assert normalize_system_title(needs_input).title == "Codex Needs Your Input"
+    assert normalize_system_title(needs_input).title == "Codex Needs Attention"
+    assert normalize_system_title(qualified).title == "Codex Needs Attention · PourInput"
     input_required = Notification(
         Category.SYSTEM_EVENTS, "Input Required", "Body", system_generated=True
     )
     unknown = Notification(
         Category.SYSTEM_EVENTS, "Unknown Event", "Body", system_generated=True
     )
-    assert normalize_system_title(input_required).title == "Codex Needs Your Input"
+    assert normalize_system_title(input_required).title == "Codex Needs Attention"
     assert normalize_system_title(unknown).title == "Unknown Codex Event"
 
 
@@ -66,7 +73,7 @@ def test_predefined_tests_use_realistic_and_identifiable_content():
     cases = notification_test_cases()
     assert "repeated L" not in LONG_TEST_MESSAGE
     assert len(LONG_TEST_MESSAGE) > PREVIEW_LIMIT
-    assert any(case.label == "Codex Task Completed" for case in cases)
+    assert any(case.label == "Codex Needs Attention: Finished" for case in cases)
     assert any(case.label.startswith("Critical:") for case in cases)
     assert any(case.label.startswith("High:") for case in cases)
     assert any(case.duplicate and case.notification.title == "Duplicate Merge Test" for case in cases)

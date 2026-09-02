@@ -141,6 +141,7 @@ def test_input_required_then_completion_delivers_one_of_each_lifecycle_notice(tm
     base = {
         "type": "agent-turn-complete",
         "thread-id": "thread-lifecycle",
+        "cwd": r"F:\work\PourDeploy",
         "input-messages": ["Complete the deployment preparation."],
     }
     waiting = parse_codex_event({
@@ -166,7 +167,13 @@ def test_input_required_then_completion_delivers_one_of_each_lifecycle_notice(tm
     assert len(desktop.items) == 2
     assert len(sounds.items) == 2
     assert len(bark.items) == 2
-    assert [entry["type"] for entry in history.read()] == [
+    entries = history.read()
+    assert [entry["type"] for entry in entries] == [
         Category.INPUT_REQUIRED.value,
         Category.TASK_COMPLETED.value,
     ]
+    assert {entry["title"] for entry in entries} == {
+        "Codex Needs Attention · PourDeploy"
+    }
+    assert all(len(entry["message"]) <= 160 for entry in entries)
+    assert all("deployment preparation is complete" not in entry["message"] for entry in entries)

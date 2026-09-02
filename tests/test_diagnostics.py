@@ -100,11 +100,14 @@ def test_supported_event_records_complete_delivery_diagnostics(tmp_path):
     assert record["history_result"] == "success"
     assert record["http_status"] == 200
     assert record["bark_response"] == '{"code":200}'
-    assert record["completion_classification"] == "high_confidence_completion"
-    assert record["completion_reason"] == "substantive_user_facing_result"
+    assert record["completion_classification"] == "needs_attention"
+    assert record["completion_reason"] == "substantive_user_facing_stop"
+    assert record["attention_state"] == "needs_attention"
+    assert record["attention_reason"] == "finished"
+    assert record["classification_reason"] == "substantive_user_facing_stop"
     assert record["classifier_version"]
-    assert record["lifecycle_classification"] == "high_confidence_completion"
-    assert record["lifecycle_reason"] == "substantive_user_facing_result"
+    assert record["lifecycle_classification"] == "needs_attention"
+    assert record["lifecycle_reason"] == "finished"
     assert record["observation_only"] is False
     assert record["duration_ms"] >= 0
     assert record["version"]
@@ -249,9 +252,12 @@ def test_suppressed_completion_records_safe_diagnostics_without_dispatch(tmp_pat
 
     serialized = path.read_text(encoding="utf-8")
     record = read_lines(path)[0]
-    assert record["dispatch_status"] == "completion_suppressed"
+    assert record["dispatch_status"] == "attention_suppressed"
     assert record["completion_classification"] == "suppressed_internal"
     assert record["completion_reason"] == "activity_summary_turn"
+    assert record["attention_state"] == "suppressed_internal"
+    assert record["attention_reason"] == ""
+    assert record["classification_reason"] == "activity_summary_turn"
     assert record["thread_id"] == "internal-thread"
     assert record["turn_id"] == "internal-turn"
     assert record["desktop_attempted"] is False
@@ -262,7 +268,7 @@ def test_suppressed_completion_records_safe_diagnostics_without_dispatch(tmp_pat
     assert "PRIVATE-RESULT" not in serialized
 
 
-def test_observation_only_classifies_high_confidence_without_dispatch(tmp_path):
+def test_observation_only_classifies_attention_without_dispatch(tmp_path):
     class FailingDispatcher:
         @staticmethod
         def dispatch(*args, **kwargs):
@@ -290,7 +296,8 @@ def test_observation_only_classifies_high_confidence_without_dispatch(tmp_path):
 
     record = read_lines(path)[0]
     assert record["dispatch_status"] == "observation_only"
-    assert record["completion_classification"] == "high_confidence_completion"
+    assert record["completion_classification"] == "needs_attention"
+    assert record["attention_reason"] == "finished"
     assert record["observation_only"] is True
     assert record["desktop_attempted"] is False
     assert record["sound_attempted"] is False

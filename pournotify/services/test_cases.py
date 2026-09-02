@@ -41,7 +41,7 @@ def notification_test_cases() -> tuple[NotificationTestCase, ...]:
     })
     assert codex is not None
     return (
-        NotificationTestCase("Codex Task Completed", codex),
+        NotificationTestCase("Codex Needs Attention: Finished", codex),
         NotificationTestCase(
             "Critical: Codex Task Failed",
             Notification(
@@ -57,10 +57,12 @@ def notification_test_cases() -> tuple[NotificationTestCase, ...]:
             ),
         ),
         NotificationTestCase(
-            "Codex Approval Required",
+            "Codex Needs Attention: Approval",
             Notification(
-                Category.APPROVAL_REQUIRED, "Approval Required",
-                "Codex is waiting for approval.", system_generated=True,
+                Category.APPROVAL_REQUIRED,
+                "Codex Needs Attention",
+                "Codex needs your approval before it can continue.",
+                system_generated=True,
             ),
         ),
         NotificationTestCase(

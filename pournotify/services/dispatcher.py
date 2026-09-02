@@ -36,7 +36,15 @@ class DispatchTrace:
     exception: str = ""
     completion_classification: str = ""
     completion_reason: str = ""
+    attention_state: str = ""
+    attention_reason: str = ""
+    classification_reason: str = ""
     classifier_version: str = ""
+    observer_version: str = ""
+    codex_thread_source: str = ""
+    detected_lifecycle: str = ""
+    detection_reason: str = ""
+    dedupe_result: str = ""
     observation_only: bool = False
 
     def add_exception(self, channel: str, error: Exception) -> None:

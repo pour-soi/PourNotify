@@ -30,6 +30,13 @@ class Category(StrEnum):
 
 
 CATEGORY_LABELS = {category: category.value.replace("_", " ").title() for category in Category}
+CATEGORY_LABELS.update(
+    {
+        Category.TASK_COMPLETED: "Finished",
+        Category.INPUT_REQUIRED: "Input Required",
+        Category.APPROVAL_REQUIRED: "Approval Required",
+    }
+)
 
 
 @dataclass(slots=True)
