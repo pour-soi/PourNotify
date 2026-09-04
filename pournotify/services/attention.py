@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
-CLASSIFIER_VERSION = "5"
+CLASSIFIER_VERSION = "6"
 
 
 class AttentionState(StrEnum):
@@ -105,6 +105,14 @@ WAITING_RULES = (
             r"\b(?:i|we) (?:still )?(?:need|require) "
             r"(?:you to|your|the following).{0,160}\b(?:before|so that) "
             r"(?:i|we) can (?:continue|proceed|finish)",
+        ),
+    ),
+    (
+        "required_user_input",
+        re.compile(
+            r"\b(?:i|we) (?:need|require) the (?:exact )?"
+            r"(?:date|time|file|value|parameter|email address|api endpoint|"
+            r"credential|option|material) before (?:i|we) can (?:continue|proceed)\b",
         ),
     ),
     (
@@ -368,6 +376,30 @@ def _direct_request_reason(message: str) -> AttentionReason | None:
     return None
 
 
+def _blocking_parameter_question(message: str, current_input: str) -> bool:
+    # A stopped question is not enough: the same requested parameter must be
+    # explicitly missing in this turn's input, not just mentioned elsewhere.
+    question = re.fullmatch(
+        r"what (?:is|are) (?:the|your) ([a-z][a-z -]{0,100})",
+        _final_question(message),
+    )
+    if question is None:
+        return False
+    parameter = question[1]
+    if not re.search(
+        r"\b(?:date|time|file|value|parameter|email address|api endpoint|"
+        r"credentials?|option|material)$", parameter
+    ):
+        return False
+    parameter = re.escape(parameter)
+    return re.search(
+        rf"\b{parameter}\s+(?:(?:is|are|was|were|has|have)\s+)?(?:still\s+)?"
+        r"(?:missing|not (?:yet )?(?:been )?(?:provided|supplied|specified|given))\b|"
+        rf"\bmissing (?:the )?{parameter}\b",
+        _normalized(current_input),
+    ) is not None
+
+
 def classify_attention(
     payload: dict[str, Any], *, local_terminal_evidence: bool = False
 ) -> AttentionDecision:
@@ -445,6 +477,14 @@ def classify_attention(
         return AttentionDecision(AttentionState.AMBIGUOUS, "missing_user_context")
 
     if _question_only(assistant_message):
+        if local_terminal_evidence and _blocking_parameter_question(
+            assistant_message, messages[-1]
+        ):
+            return AttentionDecision(
+                AttentionState.NEEDS_ATTENTION,
+                "blocking_required_question",
+                AttentionReason.INPUT_REQUIRED,
+            )
         return AttentionDecision(AttentionState.AMBIGUOUS, "question_only_response")
     final_question = _final_question(assistant_message)
     if final_question and not _is_optional_follow_up(final_question):

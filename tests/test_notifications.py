@@ -1,11 +1,20 @@
+import json
 from datetime import UTC, datetime
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 from pournotify.config import AppConfig
+from pournotify.main import dispatch_codex_payload
 from pournotify.models import Category, Notification, Priority
 from pournotify.services.codex import parse_codex_event
+from pournotify.services.codex_observer import OBSERVER_VERSION
 from pournotify.services.delivery import BarkDeliveryResult
+from pournotify.services.diagnostics import NotificationDiagnostics
 from pournotify.services.dispatcher import NotificationDispatcher
 from pournotify.services.history import HistoryStore
+from pournotify.services.lifecycle_ledger import CodexLifecycleLedger
 
 
 class Recorder:
@@ -177,3 +186,121 @@ def test_input_required_then_completion_delivers_one_of_each_lifecycle_notice(tm
     }
     assert all(len(entry["message"]) <= 160 for entry in entries)
     assert all("deployment preparation is complete" not in entry["message"] for entry in entries)
+
+
+@pytest.fixture
+def appointment_pipeline(tmp_path):
+    config = AppConfig(bark_enabled=True, bark_device_key="configured")
+    for category in (Category.INPUT_REQUIRED, Category.TASK_COMPLETED):
+        settings = config.categories[category.value]
+        settings.enabled = settings.desktop = settings.sound = settings.bark = settings.history = True
+    history = HistoryStore(tmp_path / "history.json")
+    desktop, sounds = Recorder(), Recorder()
+    bark = Recorder(BarkDeliveryResult(200, '{"code":200}'))
+    service = NotificationDispatcher(config, history, desktop, sounds, bark)
+    fixture = Path(__file__).parent / "fixtures/input_required_appointment.json"
+    return SimpleNamespace(
+        payload=json.loads(fixture.read_text(encoding="utf-8")),
+        window=SimpleNamespace(dispatcher=service),
+        history=history,
+        channels=(desktop, sounds, bark),
+        ledger=CodexLifecycleLedger(tmp_path / "ledger.sqlite3"),
+        diagnostics=NotificationDiagnostics(tmp_path / "diagnostics.jsonl"),
+    )
+
+
+def dispatch_appointment(pipeline, source, *, payload=None, thread_source="user"):
+    return dispatch_codex_payload(
+        pipeline.window,
+        json.dumps(pipeline.payload if payload is None else payload),
+        pipeline.diagnostics,
+        notify_source=source,
+        lifecycle_ledger=pipeline.ledger,
+        observer_version=OBSERVER_VERSION if source == "codex_local_fallback" else "",
+        thread_source_resolver=lambda thread_id: thread_source,
+    )
+
+
+def appointment_diagnostics(pipeline):
+    return [
+        json.loads(line)
+        for line in pipeline.diagnostics.path.read_text(encoding="utf-8").splitlines()
+    ]
+
+
+@pytest.mark.parametrize("first_source", ["ipc", "codex_local_fallback"])
+def test_blocking_appointment_question_delivers_once_across_both_paths(
+    appointment_pipeline, first_source
+):
+    pipeline = appointment_pipeline
+    second_source = "codex_local_fallback" if first_source == "ipc" else "ipc"
+
+    assert dispatch_appointment(pipeline, first_source)
+    assert not dispatch_appointment(pipeline, second_source)
+
+    assert [len(channel.items) for channel in pipeline.channels] == [1, 1, 1]
+    entries = pipeline.history.read()
+    assert [(entry["type"], entry["count"]) for entry in entries] == [("input_required", 1)]
+    assert entries[0]["title"].startswith("Codex Needs Attention · ")
+    assert entries[0]["message"] == "Codex needs your input before it can continue."
+    records = appointment_diagnostics(pipeline)
+    assert records[0]["attention_reason"] == "input_required"
+    assert records[0]["classification_reason"] == "blocking_required_question"
+    assert records[1]["dispatch_status"] == "lifecycle_duplicate"
+    assert records[1]["dedupe_result"] == "already_claimed"
+    for channel in ("desktop", "sound", "bark", "history"):
+        assert records[0][f"{channel}_attempted"] is True
+        assert records[1][f"{channel}_attempted"] is False
+
+
+def test_contextless_hook_does_not_claim_before_fallback_recovers_required_input(
+    appointment_pipeline,
+):
+    pipeline = appointment_pipeline
+    missing_context = {**pipeline.payload, "input-messages": []}
+    assert not dispatch_appointment(pipeline, "ipc", payload=missing_context)
+    assert dispatch_appointment(pipeline, "codex_local_fallback")
+    assert not dispatch_appointment(pipeline, "ipc")
+
+    assert [len(channel.items) for channel in pipeline.channels] == [1, 1, 1]
+    assert [(entry["type"], entry["count"]) for entry in pipeline.history.read()] == [
+        ("input_required", 1)
+    ]
+    records = appointment_diagnostics(pipeline)
+    assert records[0]["classification_reason"] == "missing_user_context"
+    assert records[1]["dedupe_result"] == "claimed"
+    assert records[2]["dedupe_result"] == "already_claimed"
+    for channel in ("desktop", "sound", "bark", "history"):
+        assert records[0][f"{channel}_attempted"] is False
+
+
+@pytest.mark.parametrize(
+    ("thread_source", "reason"),
+    [("subagent", "subagent_thread"), ("", "unverified_thread_source")],
+)
+def test_blocking_question_does_not_bypass_source_suppression(
+    appointment_pipeline, thread_source, reason
+):
+    pipeline = appointment_pipeline
+    assert not dispatch_appointment(pipeline, "ipc", thread_source=thread_source)
+    assert all(not channel.items for channel in pipeline.channels)
+    assert pipeline.history.read() == []
+    record = appointment_diagnostics(pipeline)[0]
+    assert record["classification_reason"] == reason
+    for channel in ("desktop", "sound", "bark", "history"):
+        assert record[f"{channel}_attempted"] is False
+
+
+def test_blocking_question_respects_validation_controller_preclaim(appointment_pipeline):
+    pipeline = appointment_pipeline
+    assert pipeline.ledger.claim(
+        pipeline.payload["thread-id"], pipeline.payload["turn-id"], "validation_controller"
+    ).claimed
+    assert not dispatch_appointment(pipeline, "ipc")
+    assert not dispatch_appointment(pipeline, "codex_local_fallback")
+    assert all(not channel.items for channel in pipeline.channels)
+    assert pipeline.history.read() == []
+    for record in appointment_diagnostics(pipeline):
+        assert record["dedupe_result"] == "already_claimed"
+        for channel in ("desktop", "sound", "bark", "history"):
+            assert record[f"{channel}_attempted"] is False

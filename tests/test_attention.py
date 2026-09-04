@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
 from pournotify.services.attention import (
@@ -378,3 +381,88 @@ def test_final_audit_can_report_out_of_scope_incomplete_work_as_finished():
 
     assert decision.state == AttentionState.NEEDS_ATTENTION
     assert decision.attention_reason == AttentionReason.FINISHED
+
+
+def appointment_fixture():
+    return json.loads(
+        (Path(__file__).parent / "fixtures/input_required_appointment.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+
+def test_missing_appointment_question_is_blocking_required_question():
+    decision = classify_attention(appointment_fixture(), local_terminal_evidence=True)
+    assert decision.state is AttentionState.NEEDS_ATTENTION
+    assert decision.attention_reason is AttentionReason.INPUT_REQUIRED
+    assert decision.classification_reason == "blocking_required_question"
+
+
+@pytest.mark.parametrize("message", [
+    "I need the tests to finish before I can proceed. I am still running them.",
+    ("I need the file to finish downloading before I can proceed. "
+     "I am still running the download."),
+])
+def test_waiting_for_running_work_is_not_waiting_for_owner(message):
+    decision = classify_attention(payload(message), local_terminal_evidence=True)
+    assert not decision.needs_attention
+    assert decision.classification_reason == "work_still_in_progress"
+
+
+@pytest.mark.parametrize("message", [
+    "Which file should I use?",
+    "What email address should I send this to?",
+    "What value should I enter here?",
+    "Which option do you want me to choose?",
+    "Please provide the missing API endpoint before I continue.",
+    "I need the exact date before I can proceed.",
+])
+def test_explicit_required_input_examples(message):
+    decision = classify_attention(payload(message))
+    assert decision.attention_reason is AttentionReason.INPUT_REQUIRED
+
+
+@pytest.mark.parametrize("context", [
+    "Write an appointment reminder.",
+    "The appointment date and start time are September 5 at 10 AM.",
+    "The file is missing; explain appointment date and start time terminology.",
+    "Explain the meaning of appointment date and start time.",
+])
+def test_same_question_without_matching_missing_information_stays_ambiguous(context):
+    item = appointment_fixture()
+    item["input-messages"] = [context]
+    decision = classify_attention(item, local_terminal_evidence=True)
+    assert decision.state is AttentionState.AMBIGUOUS
+
+
+def test_missing_parameter_question_requires_verified_stop_and_current_context():
+    item = appointment_fixture()
+    assert not classify_attention(item).needs_attention
+    item["input-messages"].append("Both values are now supplied. Explain the format.")
+    assert not classify_attention(item, local_terminal_evidence=True).needs_attention
+
+
+@pytest.mark.parametrize("question", [
+    "Would you like me to also update the README?",
+    "Do you want me to explain this further?",
+    "Should I give you another example?",
+    "What is the meaning of time?",
+    "Is that surprising?",
+])
+@pytest.mark.parametrize("completed", [False, True])
+def test_optional_or_ambiguous_questions_never_become_required_input(question, completed):
+    item = appointment_fixture()
+    item["last-assistant-message"] = (
+        "The requested work is complete. " if completed else ""
+    ) + question
+    decision = classify_attention(item, local_terminal_evidence=True)
+    assert decision.attention_reason is not AttentionReason.INPUT_REQUIRED
+
+
+def test_missing_parameter_question_cannot_override_internal_signature():
+    item = appointment_fixture()
+    item["input-messages"].insert(0,
+        "Generate UI metadata. Do not answer the request; only fill the summary field."
+    )
+    decision = classify_attention(item, local_terminal_evidence=True)
+    assert decision.state is AttentionState.SUPPRESSED_INTERNAL

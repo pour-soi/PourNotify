@@ -1,0 +1,10 @@
+{
+  "type": "agent-turn-complete",
+  "thread-id": "sanitized-appointment-thread",
+  "turn-id": "sanitized-appointment-input-turn",
+  "cwd": "F:\\work\\Appointment",
+  "input-messages": [
+    "Write a one-sentence appointment reminder. The appointment date and start time have not yet been supplied. Do not invent either value: ask me for the missing information and stop to wait before writing the reminder."
+  ],
+  "last-assistant-message": "What is the appointment date and start time?"
+}
