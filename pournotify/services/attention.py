@@ -376,9 +376,9 @@ def _direct_request_reason(message: str) -> AttentionReason | None:
     return None
 
 
-def _blocking_parameter_question(message: str, current_input: str) -> bool:
+def _blocking_parameter_question(message: str, request_context: list[str]) -> bool:
     # A stopped question is not enough: the same requested parameter must be
-    # explicitly missing in this turn's input, not just mentioned elsewhere.
+    # explicitly missing in the verified request context, not just mentioned elsewhere.
     question = re.fullmatch(
         r"what (?:is|are) (?:the|your) ([a-z][a-z -]{0,100})",
         _final_question(message),
@@ -392,12 +392,12 @@ def _blocking_parameter_question(message: str, current_input: str) -> bool:
     ):
         return False
     parameter = re.escape(parameter)
-    return re.search(
+    pattern = re.compile(
         rf"\b{parameter}\s+(?:(?:is|are|was|were|has|have)\s+)?(?:still\s+)?"
         r"(?:missing|not (?:yet )?(?:been )?(?:provided|supplied|specified|given))\b|"
-        rf"\bmissing (?:the )?{parameter}\b",
-        _normalized(current_input),
-    ) is not None
+        rf"\bmissing (?:the )?{parameter}\b"
+    )
+    return any(pattern.search(_normalized(context)) for context in request_context)
 
 
 def classify_attention(
@@ -477,8 +477,13 @@ def classify_attention(
         return AttentionDecision(AttentionState.AMBIGUOUS, "missing_user_context")
 
     if _question_only(assistant_message):
+        request_context = payload.get("request-context")
+        if not isinstance(request_context, list) or not all(
+            isinstance(context, str) and context.strip() for context in request_context
+        ):
+            request_context = [messages[-1]]
         if local_terminal_evidence and _blocking_parameter_question(
-            assistant_message, messages[-1]
+            assistant_message, request_context
         ):
             return AttentionDecision(
                 AttentionState.NEEDS_ATTENTION,

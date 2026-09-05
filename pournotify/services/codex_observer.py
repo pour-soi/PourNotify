@@ -16,7 +16,9 @@ DEFAULT_MAX_LINE_BYTES = 2 * 1024 * 1024
 DEFAULT_MAX_METADATA_BYTES = 512 * 1024
 DEFAULT_MAX_HYDRATION_BYTES = 512 * 1024
 DEFAULT_ACTIVE_FILE_MAX_AGE_SECONDS = 24 * 60 * 60
-OBSERVER_VERSION = "3"
+MAX_THREAD_CONTEXT_MESSAGES = 16
+MAX_CONTEXT_MESSAGE_CHARACTERS = 64 * 1024
+OBSERVER_VERSION = "4"
 USER_THREAD_SOURCES = {"user", "agent_created_thread"}
 
 
@@ -79,6 +81,7 @@ class _TurnState:
     cwd: str = ""
     input_messages: list[str] = field(default_factory=list)
     final_message: str = ""
+    context_valid: bool = True
 
 
 @dataclass(slots=True)
@@ -92,12 +95,14 @@ class _FileState:
     cwd: str = ""
     active_turn_id: str = ""
     require_post_baseline_timestamp: bool = False
+    request_context: list[str] = field(default_factory=list)
     turns: dict[str, _TurnState] = field(default_factory=dict)
 
     def reset_runtime_state(self) -> None:
         self.partial = b""
         self.discard_until_newline = False
         self.active_turn_id = ""
+        self.request_context.clear()
         self.turns.clear()
 
 
@@ -525,9 +530,7 @@ class CodexRolloutObserver:
             return
         item_type = item.get("type")
         if item_type == "FunctionCallOutput":
-            message = self._codex_app_delegated_input(item)
-            if message and message not in turn.input_messages:
-                turn.input_messages.append(message)
+            self._apply_codex_app_turn_input(state, turn, item)
             return
         if item_type == "UserMessage":
             message = self._item_text(item, "text")
@@ -554,9 +557,7 @@ class CodexRolloutObserver:
                 and isinstance(metadata, dict)
                 and metadata.get("turn_id") == state.active_turn_id
             ):
-                message = self._codex_app_delegated_input(payload)
-                if message and message not in turn.input_messages:
-                    turn.input_messages.append(message)
+                self._apply_codex_app_turn_input(state, turn, payload)
             return
         if payload.get("type") != "message":
             return
@@ -581,27 +582,53 @@ class CodexRolloutObserver:
             return
         turn.final_message = message
 
+    def _apply_codex_app_turn_input(
+        self, state: _FileState, turn: _TurnState, payload: dict[str, Any]
+    ) -> None:
+        parsed = self._codex_app_turn_input(payload)
+        if parsed is None:
+            return
+        operation, message = parsed
+        if len(message) > MAX_CONTEXT_MESSAGE_CHARACTERS:
+            turn.context_valid = False
+            self._metrics.schema_rejections += 1
+            return
+        if operation == "create_thread":
+            state.request_context = [message]
+        elif message not in state.request_context:
+            state.request_context.append(message)
+            if len(state.request_context) > MAX_THREAD_CONTEXT_MESSAGES:
+                state.request_context = [
+                    state.request_context[0],
+                    *state.request_context[-(MAX_THREAD_CONTEXT_MESSAGES - 1) :],
+                ]
+        turn.input_messages = [
+            message,
+            *(item for item in turn.input_messages if item != message),
+        ]
+
     @staticmethod
-    def _codex_app_delegated_input(payload: dict[str, Any]) -> str:
+    def _codex_app_turn_input(payload: dict[str, Any]) -> tuple[str, str] | None:
         if (
             payload.get("namespace") != "codex_app"
-            or payload.get("name") != "send_message_to_thread"
+            or payload.get("name")
+            not in {"create_thread", "send_message_to_thread"}
         ):
-            return ""
+            return None
         output = payload.get("output")
         if not isinstance(output, str) or not output.strip():
-            return ""
+            return None
         try:
             root = ET.fromstring(output)
         except ET.ParseError:
-            return ""
+            return None
         children = list(root)
         if (
             root.tag != "codex_delegation"
             or [child.tag for child in children] != ["source_thread_id", "input"]
             or any(list(child) for child in children)
         ):
-            return ""
+            return None
         source_thread_id = children[0].text
         delegated_input = children[1].text
         if (
@@ -610,8 +637,8 @@ class CodexRolloutObserver:
             or not isinstance(delegated_input, str)
             or not delegated_input.strip()
         ):
-            return ""
-        return delegated_input.strip()
+            return None
+        return str(payload["name"]), delegated_input.strip()
 
     @staticmethod
     def _item_text(item: dict[str, Any], block_type: str) -> str:
@@ -677,6 +704,7 @@ class CodexRolloutObserver:
             state.thread_source not in USER_THREAD_SOURCES
             or not state.thread_id
             or not turn.started
+            or not turn.context_valid
             or not isinstance(cwd, str)
             or not cwd.strip()
             or "\0" in cwd
@@ -698,6 +726,8 @@ class CodexRolloutObserver:
             "input-messages": list(turn.input_messages),
             "last-assistant-message": last_message,
         }
+        if state.request_context:
+            candidate["request-context"] = list(state.request_context)
         if not emit_candidate:
             return
         if candidate_sink is not None:

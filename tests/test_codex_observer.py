@@ -6,7 +6,13 @@ from pathlib import Path
 
 import pytest
 
+from pournotify.services.attention import (
+    AttentionReason,
+    AttentionState,
+    classify_attention,
+)
 from pournotify.services.codex_observer import (
+    MAX_THREAD_CONTEXT_MESSAGES,
     CodexRolloutObserver,
     resolve_codex_thread_source,
 )
@@ -84,6 +90,107 @@ def _completed_item(thread_id, turn_id, item):
 
 def _response_item(payload):
     return _record("response_item", payload)
+
+
+def _delegation(message):
+    return (
+        "<codex_delegation>"
+        "<source_thread_id>sanitized-source-thread</source_thread_id>"
+        f"<input>{message}</input>"
+        "</codex_delegation>"
+    )
+
+
+def _codex_app_input_records(
+    thread_id,
+    turn_id,
+    message,
+    *,
+    operation="create_thread",
+    namespace="codex_app",
+    output=None,
+):
+    delegation = _delegation(message) if output is None else output
+    return [
+        _response_item(
+            {
+                "type": "function_call_output",
+                "name": operation,
+                "namespace": namespace,
+                "output": delegation,
+                "internal_chat_message_metadata_passthrough": {
+                    "turn_id": turn_id,
+                    "create_time": 4_102_444_799,
+                },
+            }
+        ),
+        _completed_item(
+            thread_id,
+            turn_id,
+            {
+                "type": "FunctionCallOutput",
+                "name": operation,
+                "namespace": namespace,
+                "output": delegation,
+            },
+        ),
+    ]
+
+
+def _codex_app_completed_turn(
+    thread_id,
+    turn_id,
+    message,
+    result,
+    *,
+    operation="create_thread",
+    namespace="codex_app",
+    output=None,
+    prelude=None,
+    completed_at=4_102_444_800,
+):
+    return [
+        _record("event_msg", {"type": "task_started", "turn_id": turn_id}),
+        *(
+            [
+                _response_item(
+                    {
+                        "type": "message",
+                        "role": "user",
+                        "content": [{"type": "input_text", "text": prelude}],
+                    }
+                )
+            ]
+            if prelude
+            else []
+        ),
+        _record("turn_context", {"turn_id": turn_id, "cwd": r"F:\work\App"}),
+        *_codex_app_input_records(
+            thread_id,
+            turn_id,
+            message,
+            operation=operation,
+            namespace=namespace,
+            output=output,
+        ),
+        _response_item(
+            {
+                "type": "message",
+                "role": "assistant",
+                "phase": "final_answer",
+                "content": [{"type": "output_text", "text": result}],
+            }
+        ),
+        _record(
+            "event_msg",
+            {
+                "type": "task_complete",
+                "turn_id": turn_id,
+                "last_agent_message": result,
+                "completed_at": completed_at,
+            },
+        ),
+    ]
 
 
 def _aborted_turn(turn_id):
@@ -479,6 +586,282 @@ def test_current_response_item_protocol_supplies_missing_notify_context(tmp_path
     ]
 
 
+def test_create_thread_context_reaches_real_observer_classifier_path(tmp_path):
+    fixture = json.loads(
+        (Path(__file__).parent / "fixtures" / "input_required_appointment.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    thread_id = fixture["thread-id"]
+    turn_id = fixture["turn-id"]
+    prompt = fixture["input-messages"][0]
+    result = fixture["last-assistant-message"]
+    emitted = []
+    observer = CodexRolloutObserver(tmp_path, emitted.append, enabled=True)
+    rollout = tmp_path / "2026" / "08" / "30" / "rollout-create-thread.jsonl"
+
+    _write_records(
+        rollout,
+        [
+            _session_meta(
+                thread_id,
+                thread_source="agent_created_thread",
+                cwd=fixture["cwd"],
+            ),
+            *_codex_app_completed_turn(
+                thread_id,
+                turn_id,
+                prompt,
+                result,
+                prelude="Sanitized app context.",
+            ),
+        ],
+    )
+
+    observer.poll_once()
+
+    assert len(emitted) == 1
+    assert emitted[0]["input-messages"] == [prompt, "Sanitized app context."]
+    assert emitted[0]["input-messages"].count(prompt) == 1
+    assert emitted[0]["request-context"] == [prompt]
+    assert "sanitized-source-thread" not in str(emitted)
+    decision = classify_attention(emitted[0], local_terminal_evidence=True)
+    assert decision.state == AttentionState.NEEDS_ATTENTION
+    assert decision.attention_reason == AttentionReason.INPUT_REQUIRED
+    assert decision.classification_reason == "blocking_required_question"
+
+
+def test_create_thread_context_is_isolated_across_parallel_rollouts(tmp_path):
+    emitted = []
+    observer = CodexRolloutObserver(tmp_path, emitted.append, enabled=True)
+    day = tmp_path / "2026" / "08" / "30"
+    cases = {
+        "thread-date": (
+            "turn-date",
+            "The appointment date is not yet supplied.",
+            "What is the appointment date?",
+        ),
+        "thread-file": (
+            "turn-file",
+            "The required file has not yet been provided.",
+            "What is the required file?",
+        ),
+    }
+    for thread_id, (turn_id, prompt, result) in cases.items():
+        _write_records(
+            day / f"rollout-{thread_id}.jsonl",
+            [
+                _session_meta(thread_id, thread_source="agent_created_thread"),
+                *_codex_app_completed_turn(thread_id, turn_id, prompt, result),
+            ],
+        )
+
+    observer.poll_once()
+
+    by_thread = {candidate["thread-id"]: candidate for candidate in emitted}
+    assert set(by_thread) == set(cases)
+    for thread_id, (turn_id, prompt, result) in cases.items():
+        assert by_thread[thread_id]["turn-id"] == turn_id
+        assert by_thread[thread_id]["input-messages"] == [prompt]
+        assert by_thread[thread_id]["request-context"] == [prompt]
+        assert by_thread[thread_id]["last-assistant-message"] == result
+
+
+def test_follow_up_context_retains_bounded_create_thread_context(tmp_path):
+    emitted = []
+    observer = CodexRolloutObserver(tmp_path, emitted.append, enabled=True)
+    thread_id = "thread-context-cleanup"
+    initial_prompt = "The appointment date and start time have not yet been supplied."
+    follow_up = "The appointment date is September 12."
+    rollout = tmp_path / "2026" / "08" / "30" / "rollout-context-cleanup.jsonl"
+    _write_records(
+        rollout,
+        [
+            _session_meta(thread_id, thread_source="agent_created_thread"),
+            *_codex_app_completed_turn(
+                thread_id,
+                "turn-create",
+                initial_prompt,
+                "What is the appointment date?",
+            ),
+        ],
+    )
+    observer.poll_once()
+
+    _write_records(
+        rollout,
+        _codex_app_completed_turn(
+            thread_id,
+            "turn-follow-up",
+            follow_up,
+            "The appointment reminder is ready.",
+            operation="send_message_to_thread",
+        ),
+        append=True,
+    )
+    observer.poll_once()
+
+    assert [candidate["turn-id"] for candidate in emitted] == [
+        "turn-create",
+        "turn-follow-up",
+    ]
+    assert emitted[0]["input-messages"] == [initial_prompt]
+    assert emitted[1]["input-messages"] == [follow_up]
+    assert initial_prompt not in emitted[1]["input-messages"]
+    assert emitted[1]["request-context"] == [initial_prompt, follow_up]
+
+    decision = classify_attention(
+        {
+            **emitted[1],
+            "last-assistant-message": "What is the start time?",
+        },
+        local_terminal_evidence=True,
+    )
+    assert decision.attention_reason == AttentionReason.INPUT_REQUIRED
+
+
+def test_thread_request_context_preserves_initial_and_bounds_follow_ups(tmp_path):
+    emitted = []
+    observer = CodexRolloutObserver(tmp_path, emitted.append, enabled=True)
+    thread_id = "thread-bounded-context"
+    initial_prompt = "Initial request requiring a date."
+    rollout = tmp_path / "2026" / "08" / "30" / "rollout-bounded-context.jsonl"
+    _write_records(
+        rollout,
+        [
+            _session_meta(thread_id, thread_source="agent_created_thread"),
+            *_codex_app_completed_turn(
+                thread_id,
+                "turn-create",
+                initial_prompt,
+                "What is the date?",
+            ),
+        ],
+    )
+    observer.poll_once()
+
+    for index in range(MAX_THREAD_CONTEXT_MESSAGES + 3):
+        follow_up = f"Follow-up value {index}."
+        _write_records(
+            rollout,
+            _codex_app_completed_turn(
+                thread_id,
+                f"turn-follow-up-{index}",
+                follow_up,
+                f"Recorded follow-up {index}.",
+                operation="send_message_to_thread",
+            ),
+            append=True,
+        )
+        observer.poll_once()
+
+    context = emitted[-1]["request-context"]
+    assert len(context) == MAX_THREAD_CONTEXT_MESSAGES
+    assert context[0] == initial_prompt
+    assert context[-1] == f"Follow-up value {MAX_THREAD_CONTEXT_MESSAGES + 2}."
+
+
+@pytest.mark.parametrize(
+    ("operation", "namespace", "output"),
+    [
+        (
+            "future_thread_operation",
+            "codex_app",
+            _delegation("Required value is missing."),
+        ),
+        (
+            "create_thread",
+            "future_namespace",
+            _delegation("Required value is missing."),
+        ),
+        ("create_thread", "codex_app", "<codex_delegation>"),
+        (
+            "create_thread",
+            "codex_app",
+            (
+                "<codex_delegation><input>Required value is missing.</input>"
+                "<source_thread_id>source</source_thread_id></codex_delegation>"
+            ),
+        ),
+        (
+            "create_thread",
+            "codex_app",
+            (
+                "<codex_delegation><source_thread_id>source</source_thread_id>"
+                "</codex_delegation>"
+            ),
+        ),
+    ],
+)
+def test_malformed_create_thread_context_fails_closed(
+    tmp_path, operation, namespace, output
+):
+    emitted = []
+    observer = CodexRolloutObserver(tmp_path, emitted.append, enabled=True)
+    thread_id = "thread-malformed-create"
+    turn_id = "turn-malformed-create"
+    result = "What is the required value?"
+    rollout = tmp_path / "2026" / "08" / "30" / "rollout-malformed-create.jsonl"
+    _write_records(
+        rollout,
+        [
+            _session_meta(thread_id, thread_source="agent_created_thread"),
+            *_codex_app_completed_turn(
+                thread_id,
+                turn_id,
+                "unused",
+                result,
+                operation=operation,
+                namespace=namespace,
+                output=output,
+            ),
+        ],
+    )
+
+    observer.poll_once()
+
+    assert emitted == []
+
+
+def test_historical_create_thread_wait_is_not_replayed_after_baseline(tmp_path):
+    thread_id = "thread-historical-create"
+    rollout = tmp_path / "2026" / "08" / "30" / "rollout-historical-create.jsonl"
+    _write_records(
+        rollout,
+        [
+            _session_meta(thread_id, thread_source="agent_created_thread"),
+            *_codex_app_completed_turn(
+                thread_id,
+                "turn-historical-create",
+                "The appointment date is not yet supplied.",
+                "What is the appointment date?",
+                completed_at=FIXED_NOW - 1,
+            ),
+        ],
+    )
+    emitted = []
+    observer = CodexRolloutObserver(tmp_path, emitted.append, enabled=True)
+    observer.poll_once()
+
+    assert emitted == []
+
+    _write_records(
+        rollout,
+        _codex_app_completed_turn(
+            thread_id,
+            "turn-new-create",
+            "The required file is not yet supplied.",
+            "What is the required file?",
+            operation="send_message_to_thread",
+            completed_at=FIXED_NOW + 1,
+        ),
+        append=True,
+    )
+    observer.poll_once()
+
+    assert [candidate["turn-id"] for candidate in emitted] == ["turn-new-create"]
+
+
 def test_codex_app_follow_up_supplies_safe_context_without_raw_output(tmp_path):
     emitted = []
     observer = CodexRolloutObserver(tmp_path, emitted.append, enabled=True)
@@ -550,6 +933,7 @@ def test_codex_app_follow_up_supplies_safe_context_without_raw_output(tmp_path):
             "turn-id": turn_id,
             "cwd": r"F:\work\App",
             "input-messages": [delegated_input],
+            "request-context": [delegated_input],
             "last-assistant-message": result,
         }
     ]

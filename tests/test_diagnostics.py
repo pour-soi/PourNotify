@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from pournotify.config import AppConfig
 from pournotify.main import dispatch_codex_payload
 from pournotify.models import Category, Notification
+from pournotify.services.codex_observer import OBSERVER_VERSION
 from pournotify.services.delivery import BarkClient, BarkDeliveryResult
 from pournotify.services.diagnostics import NotificationDiagnostics
 from pournotify.services.dispatcher import DispatchTrace, NotificationDispatcher
@@ -193,6 +194,56 @@ def test_diagnostics_redacts_payload_bearing_command_line_arguments(tmp_path):
     assert record["arguments"] == ["PourNotify.exe", "--notify"]
     assert "PRIVATE-PROMPT" not in serialized
     assert "PRIVATE-ARGUMENT" not in serialized
+
+
+def test_create_thread_observer_payload_redacts_original_request_context(tmp_path):
+    path = tmp_path / "notify-diagnostics.jsonl"
+    diagnostics = NotificationDiagnostics(path)
+    private_marker = "PRIVATE-CREATE-THREAD-REQUEST"
+    original_request = (
+        f"{private_marker}: The appointment date and start time have not yet been supplied."
+    )
+    assistant_message = "What is the appointment date and start time?"
+    raw_create_thread_xml = (
+        "<codex_delegation>"
+        "<source_thread_id>private-source-thread</source_thread_id>"
+        f"<input>{original_request}</input>"
+        "</codex_delegation>"
+    )
+    payload = {
+        "type": "agent-turn-complete",
+        "thread-id": "create-thread-private-thread",
+        "turn-id": "create-thread-private-turn",
+        "cwd": r"F:\work\Appointment",
+        "input-messages": [original_request],
+        "last-assistant-message": assistant_message,
+        "raw-create-thread-output": raw_create_thread_xml,
+    }
+
+    assert dispatch_codex_payload(
+        SimpleNamespace(dispatcher=SuccessfulDispatcher()),
+        json.dumps(payload),
+        diagnostics,
+        notify_source="codex_local_fallback",
+        observer_version=OBSERVER_VERSION,
+    )
+
+    serialized = path.read_text(encoding="utf-8")
+    record = read_lines(path)[0]
+    assert record["received_payload"] == {
+        "type": "agent-turn-complete",
+        "thread-id": "create-thread-private-thread",
+        "turn-id": "create-thread-private-turn",
+        "cwd": r"F:\work\Appointment",
+        "input-message-count": 1,
+        "last-assistant-message-length": len(assistant_message),
+    }
+    assert record["notify_source"] == "codex_local_fallback"
+    assert record["observer_version"] == OBSERVER_VERSION
+    assert private_marker not in serialized
+    assert raw_create_thread_xml not in serialized
+    assert "<codex_delegation>" not in serialized
+    assert assistant_message not in serialized
 
 
 def test_dispatcher_populates_channel_trace_without_changing_status():
