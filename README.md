@@ -56,6 +56,27 @@ short **Codex Needs Attention · Project** title (when a safe project name is av
 one-sentence reason. The full Codex response stays in Codex and is not copied into Desktop, Bark,
 or new History entries.
 
+### Approval validation limitation (PR #6)
+
+Finished and Input Required passed the recorded real-task physical checks. Formal, mid-turn
+permission approval waits are **not currently supported reliably**: the real Case 3 approval
+prompt produced no notification. The `approval_required` category remains compatible, but its
+existence and text classification do not establish detection of a live permission gate.
+
+Codex's app-server protocol provides `item/commandExecution/requestApproval` and
+`serverRequest/resolved`, with thread, turn, item and request identities. However, the installed
+Desktop's inspected rollout, database and log sources do not expose a usable pending/resolved
+approval sequence to this observer. The Desktop maintains live conversation requests; a request
+for `require_escalated`, an `inProgress` turn, or a missing tool result is not proof that owner
+approval is pending. No heuristic fallback is added for those signals.
+
+A future adapter requires an authoritative read-only pending snapshot/event stream and resolution
+tracking, per-request deduplication across intake paths, and startup baselining without replay.
+Approval resolution must not itself mean completion or consume a later finished transition's
+identity. Approve/reject/cancel, restart and parallel-thread behavior remain unvalidated until
+that source is available. PR #6 is not ready for full acceptance on the current Case 3 criteria.
+See the [official approval protocol](https://learn.chatgpt.com/docs/app-server#approvals).
+
 ## Features
 
 | | |
