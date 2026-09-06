@@ -149,8 +149,9 @@ class SettingsPage(QWidget):
     def _codex_attention_card(self) -> QWidget:
         card, layout = self._card(
             "Notify me when Codex needs my attention",
-            "A user-facing Codex task can need attention because it finished, needs input, or "
-            "needs approval. Each reason keeps its existing delivery settings.",
+            "Finished and Input Required are supported. Approval Required is retained for "
+            "compatibility and defaults to off; real permission-wait detection is not supported "
+            "reliably. Each category keeps its existing delivery settings.",
         )
         self.attention_table = self._category_table(
             CODEX_ATTENTION_CATEGORIES,
@@ -301,6 +302,9 @@ class SettingsPage(QWidget):
     ) -> None:
         setting = self.config.categories[category.value]
         label = QTableWidgetItem(CATEGORY_LABELS[category])
+        if category == Category.APPROVAL_REQUIRED:
+            label.setText("Approval Required (unsupported)")
+            label.setToolTip("Compatibility only; real approval-wait detection is not reliable.")
         label.setData(Qt.UserRole, category.value)
         table.setItem(row, 0, label)
         enabled = self._centered_checkbox(setting.enabled)

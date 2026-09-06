@@ -46,8 +46,8 @@ account requirement.
 ## Development draft: Codex needs attention
 
 The unreleased development branch treats `needs_attention` as the primary Codex lifecycle state.
-A user-facing turn needs attention when Codex has stopped and is waiting because the current work
-finished, required input is missing, or approval is required. Known internal housekeeping,
+A supported user-facing turn needs attention when Codex has stopped and is waiting because the
+current work finished or required input is missing. Known internal housekeeping,
 automatically continuing progress, and ambiguous turns remain silent.
 
 Existing configuration keys remain compatible: `finished` uses `task_completed`, while
@@ -60,7 +60,8 @@ or new History entries.
 
 Finished and Input Required passed the recorded real-task physical checks. Formal, mid-turn
 permission approval waits are **not currently supported reliably**: the real Case 3 approval
-prompt produced no notification. The `approval_required` category remains compatible, but its
+prompt produced no notification. The `approval_required` category defaults to disabled in new
+configurations and when no enabled value is saved; explicit existing choices are preserved. Its
 existence and text classification do not establish detection of a live permission gate.
 
 Codex's app-server protocol provides `item/commandExecution/requestApproval` and
@@ -73,8 +74,9 @@ approval is pending. No heuristic fallback is added for those signals.
 A future adapter requires an authoritative read-only pending snapshot/event stream and resolution
 tracking, per-request deduplication across intake paths, and startup baselining without replay.
 Approval resolution must not itself mean completion or consume a later finished transition's
-identity. Approve/reject/cancel, restart and parallel-thread behavior remain unvalidated until
-that source is available. PR #6 is not ready for full acceptance on the current Case 3 criteria.
+identity. Approve/reject/cancel, restart and parallel-thread approval behavior remain unvalidated
+until that source is available. The owner-approved scope of PR #6 is Finished and Input Required
+only; formal approval-wait detection is explicitly excluded, not considered a passing Case 3.
 See the [official approval protocol](https://learn.chatgpt.com/docs/app-server#approvals).
 
 ## Features
@@ -158,7 +160,8 @@ looks like a substantive final response.
 ## Notification controls
 
 The Settings page groups the three Codex attention reasons—Finished, Input Required, and Approval
-Required—under **Notify me when Codex needs my attention**. Their existing configuration categories
+Required (marked unsupported)—under **Notify me when Codex needs my attention**. The first two are
+the supported product scope; Approval Required is default-off compatibility only. These categories
 remain intact for backward compatibility. Each reason keeps its own settings for:
 
 - enabled state;

@@ -30,6 +30,7 @@ def default_categories() -> dict[str, CategorySettings]:
         settings[category.value].priority = Priority.CRITICAL
     settings[Category.BONUS_QUOTA.value].priority = Priority.HIGH
     settings[Category.BARK_TEST.value].history = False
+    settings[Category.APPROVAL_REQUIRED.value].enabled = False
     return settings
 
 
@@ -72,7 +73,9 @@ class AppConfig:
         categories = default_categories()
         for name, value in raw.get("categories", {}).items():
             if name in categories and isinstance(value, dict):
-                categories[name] = CategorySettings.from_dict(value)
+                categories[name] = CategorySettings.from_dict(
+                    {"enabled": categories[name].enabled, **value}
+                )
         values["categories"] = categories
         values["version"] = CONFIG_VERSION
         return cls(**values)

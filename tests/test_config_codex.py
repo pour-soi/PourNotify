@@ -34,6 +34,22 @@ def test_config_round_trip_and_unknown_keys(tmp_path):
     assert store.load().categories[Category.LOW_QUOTA.value].desktop is False
 
 
+@pytest.mark.parametrize("raw", [{}, {"categories": {"approval_required": {}}}])
+def test_unsupported_approval_defaults_off_without_disabling_supported_reasons(raw):
+    config = AppConfig.from_dict(raw)
+    assert config.categories[Category.APPROVAL_REQUIRED.value].enabled is False
+    assert config.categories[Category.TASK_COMPLETED.value].enabled is True
+    assert config.categories[Category.INPUT_REQUIRED.value].enabled is True
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_saved_approval_choice_remains_compatible(tmp_path, enabled):
+    config = AppConfig.from_dict({"categories": {"approval_required": {"enabled": enabled}}})
+    store = ConfigStore(tmp_path / "config.json")
+    store.save(config)
+    assert store.load().categories[Category.APPROVAL_REQUIRED.value].enabled is enabled
+
+
 def test_new_input_required_category_is_added_to_existing_config(tmp_path):
     path = tmp_path / "config.json"
     path.write_text('{"categories":{"task_completed":{"enabled":false}}}', encoding="utf-8")

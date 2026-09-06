@@ -22,7 +22,9 @@ and recent delivery timestamps are persisted in history so cooldown, merge, and 
 effective across process boundaries. PourNotify is the only Bark sender in this route.
 
 The primary Codex state is `needs_attention`, with a reason of `finished`, `input_required`, or
-`approval_required`. Known automatically continuing progress remains working; internal and ambiguous
+`approval_required`. The supported release scope is Finished and Input Required; approval remains
+an internal compatibility category, default-off, not reliable live permission-wait detection.
+Known automatically continuing progress remains working; internal and ambiguous
 turns are silent. The external notify path first resolves the rollout's authoritative
 `thread_source`; subagent and unknown sources fail closed before content classification. The
 external path and local fallback then normalize into the same attention classifier and map reasons

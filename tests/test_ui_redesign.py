@@ -59,6 +59,8 @@ def test_category_editor_preserves_every_category_and_setting(tmp_path, monkeypa
     page = window.settings_page
 
     assert page.attention_table.rowCount() == 3
+    assert page.attention_table.item(2, 0).text() == "Approval Required (unsupported)"
+    assert "not reliable" in page.attention_table.item(2, 0).toolTip()
     assert page.table.rowCount() == len(Category) - 3 == 11
     assert page.attention_table.columnCount() == 5
     assert page.table.columnCount() == 5
@@ -180,7 +182,8 @@ def test_local_fallback_setting_is_opt_in_and_notifies_only_on_change(tmp_path, 
         "Recover missed Codex attention events with the local observer"
     )
     assert any(
-        "user-facing Codex task can need attention" in label.text()
+        "Finished and Input Required are supported." in label.text()
+        and "real permission-wait detection is not supported reliably" in label.text()
         for label in page.findChildren(QLabel)
     )
     assert page.codex_local_fallback.isEnabled()
