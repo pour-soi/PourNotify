@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.0.6
+
+- Supported scope: Finished and Input Required. Both user-facing stop reasons deliver short
+  **Codex Needs Attention · Project** alerts instead of copying assistant output.
+- Added an optional Windows read-only local observer to recover missed notify-hook events, with
+  startup baselining and shared thread/turn deduplication across both intake paths.
+- Suppressed internal subagents, title/description/UI metadata, intermediate progress and unknown
+  thread sources; retained privacy-safe diagnostics and separate Input Required History entries.
+- Improved required-input detection using reconstructed task context, including Chinese requests
+  independent of terminal punctuation. Finished and Input Required passed physical validation in
+  the approved candidate flows with one alert per channel and no duplicates observed.
+- Approval Required is disabled by default and retained only for configuration compatibility.
+  Real pending/resolved permission approval waits are not reliably supported: the current Desktop
+  local sources do not expose a reliable read-only approval lifecycle. No heuristic is added.
+- Codex notify events are turn-level, not explicit task-terminal signals. Detection remains
+  conservative and may suppress ambiguous or unverified events; perfect detection is not claimed.
+
 ## 1.0.5
 
 - Added conservative Codex lifecycle classification: blocked owner-action turns notify through

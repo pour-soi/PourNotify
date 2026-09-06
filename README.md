@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/pour-soi/PourNotify/releases/tag/v1.0.5"><img alt="Latest Release" src="https://img.shields.io/github/v/release/pour-soi/PourNotify?display_name=tag&amp;sort=semver"></a>
+  <a href="https://github.com/pour-soi/PourNotify/releases/tag/v1.0.6"><img alt="Latest Release" src="https://img.shields.io/github/v/release/pour-soi/PourNotify?display_name=tag&amp;sort=semver"></a>
   <a href="#download"><img alt="Windows" src="https://img.shields.io/badge/Windows-supported-3578E5?logo=windows&amp;logoColor=white"></a>
   <a href="#project-status"><img alt="macOS" src="https://img.shields.io/badge/macOS-CI_build-6B7280?logo=apple&amp;logoColor=white"></a>
   <a href="https://github.com/pour-soi/PourNotify/actions/workflows/build.yml"><img alt="CI" src="https://github.com/pour-soi/PourNotify/actions/workflows/build.yml/badge.svg"></a>
@@ -17,18 +17,19 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/pour-soi/PourNotify/releases/download/v1.0.5/PourNotify-v1.0.5-Windows.exe">Download</a> •
-  <a href="https://github.com/pour-soi/PourNotify/releases/tag/v1.0.5">Releases</a> •
+  <a href="https://github.com/pour-soi/PourNotify/releases/download/v1.0.6/PourNotify-v1.0.6-Windows.exe">Download</a> •
+  <a href="https://github.com/pour-soi/PourNotify/releases/tag/v1.0.6">Releases</a> •
   <a href="#quick-start">Documentation</a> •
-  <a href="https://github.com/pour-soi/PourNotify/tree/v1.0.5">Source Code</a>
+  <a href="https://github.com/pour-soi/PourNotify/tree/v1.0.6">Source Code</a>
 </p>
 
 ![PourNotify dashboard showing Codex, Bark, desktop, History, and Diagnostics status](docs/images/pournotify-dashboard.jpg)
 
-## What's new in v1.0.5
+## What's new in v1.0.6
 
-- Notifies once when Codex needs required owner input or approval, and once when a later final result
-  is classified as a high-confidence completion.
+- Supported reasons: Finished and Input Required, with short project-qualified attention alerts.
+- Optional Windows local fallback and shared thread/turn deduplication recover missed hooks.
+- Approval Required is default-off compatibility only; real approval waits are not reliably detected.
 - Suppresses internal activity summaries, title and UI metadata, description metadata, intermediate
   analysis, checkpoints, and other clearly in-progress turns.
 - Keeps diagnostics useful while excluding raw private prompts and assistant output.
@@ -43,9 +44,9 @@ enabled for each category. Notification Test uses the same dispatcher as real Co
 Configuration, History, and diagnostics stay on your computer. PourNotify has no hosted backend or
 account requirement.
 
-## Development draft: Codex needs attention
+## Codex needs attention
 
-The unreleased development branch treats `needs_attention` as the primary Codex lifecycle state.
+PourNotify treats `needs_attention` as the primary Codex lifecycle state.
 A supported user-facing turn needs attention when Codex has stopped and is waiting because the
 current work finished or required input is missing. Known internal housekeeping,
 automatically continuing progress, and ambiguous turns remain silent.
@@ -90,13 +91,13 @@ See the [official approval protocol](https://learn.chatgpt.com/docs/app-server#a
 
 ## Download
 
-The latest stable release is **v1.0.5**.
+The latest stable release is **v1.0.6**.
 
-- **Windows:** download [`PourNotify-v1.0.5-Windows.exe`](https://github.com/pour-soi/PourNotify/releases/download/v1.0.5/PourNotify-v1.0.5-Windows.exe).
+- **Windows:** download [`PourNotify-v1.0.6-Windows.exe`](https://github.com/pour-soi/PourNotify/releases/download/v1.0.6/PourNotify-v1.0.6-Windows.exe).
 - **All releases:** visit [GitHub Releases](https://github.com/pour-soi/PourNotify/releases).
 - The automatically generated source archives are source code, not the normal Windows executable.
 - Windows and macOS builds pass in CI. Physical macOS runtime validation is still pending, and the
-  v1.0.5 release currently publishes only the Windows executable.
+  v1.0.6 release currently publishes only the Windows executable.
 
 ## Quick start
 
@@ -237,7 +238,7 @@ Build output is written to `dist/`. The same test, Ruff, and PyInstaller command
 
 ## Project status
 
-- Latest stable release: **v1.0.5**
+- Latest stable release: **v1.0.6**
 - Windows runtime validation: complete
 - Silent Windows login startup and single-resident behavior: validated
 - Windows toast, Notification Center retention, sound, Bark, History, Diagnostics, and IPC:
