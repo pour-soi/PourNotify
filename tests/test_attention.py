@@ -391,6 +391,43 @@ def appointment_fixture():
     )
 
 
+@pytest.mark.parametrize("ending", ["？", "。", "?", ".", "！", "!", ""])
+@pytest.mark.parametrize("wording", [
+    "请提供预约日期和开始时间", "请告诉我预约日期和开始时间",
+    "我需要预约日期和开始时间才能继续", "还需要你提供预约日期和开始时间",
+    "请补充缺少的日期和时间", "需要确认具体日期和开始时间",
+    "预约日期和开始时间是什么", "请上传需要处理的文件",
+    "请提供缺少的信息后我再继续",
+    "请提供预约日期和开始时间，我再帮你写一句可复制到日历的预约提醒",
+])
+def test_chinese_blocking_input_is_independent_of_punctuation(wording, ending):
+    item = payload(wording + ending, "预约日期和开始时间尚未提供。需要处理的文件未上传。")
+    decision = classify_attention(item, local_terminal_evidence=True)
+    assert decision.attention_reason == AttentionReason.INPUT_REQUIRED
+    assert decision.classification_reason == "blocked_until_user_action"
+
+
+@pytest.mark.parametrize("offer", [
+    "需要我继续帮你处理吗？", "要不要我再给你一个版本？",
+    "如果你愿意，我可以继续优化。", "需要我解释一下吗？",
+    "你还需要我做其他事情吗？",
+])
+def test_chinese_optional_offer_after_completion_remains_finished(offer):
+    item = payload("任务已经完成。" + offer, "预约日期和开始时间尚未提供。")
+    decision = classify_attention(item, local_terminal_evidence=True)
+    assert decision.attention_reason == AttentionReason.FINISHED
+
+
+@pytest.mark.parametrize("context", [
+    "解释预约日期和开始时间的含义。", "预约日期和开始时间已提供。",
+    "缺少文件，请解释日期术语。",
+])
+def test_chinese_imperative_without_required_context_does_not_request_input(context):
+    decision = classify_attention(payload("请提供预约日期和开始时间。", context),
+                                  local_terminal_evidence=True)
+    assert decision.attention_reason != AttentionReason.INPUT_REQUIRED
+
+
 def test_missing_appointment_question_is_blocking_required_question():
     decision = classify_attention(appointment_fixture(), local_terminal_evidence=True)
     assert decision.state is AttentionState.NEEDS_ATTENTION

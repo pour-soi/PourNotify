@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
-CLASSIFIER_VERSION = "6"
+CLASSIFIER_VERSION = "7"
 
 
 class AttentionState(StrEnum):
@@ -322,7 +322,7 @@ def _question_only(message: str) -> bool:
     if not stripped.endswith(("?", "？")):
         return False
     before_question = stripped[:-1]
-    return not re.search(r"[.!。！](?:\s|$)|\n", before_question)
+    return not re.search(r"[.!](?:\s|$)|[。！\n]", before_question)
 
 
 def _final_question(message: str) -> str:
@@ -350,6 +350,8 @@ def _is_optional_follow_up(question: str) -> bool:
         "anything else",
         "want me to ",
         "需要我",
+        "你还需要我",
+        "要不要我",
     )
     return question.startswith(optional_starts)
 
@@ -400,6 +402,35 @@ def _blocking_parameter_question(message: str, request_context: list[str]) -> bo
     return any(pattern.search(_normalized(context)) for context in request_context)
 
 
+def _chinese_blocking_input(message: str, payload: dict[str, Any]) -> bool:
+    request = re.split(r"[。.!！?？\n]", message.strip(), maxsplit=1)[0]
+    if not re.fullmatch(
+        r"(?:(?:请(?:提供|告诉我|补充|上传)|还需要你提供|需要确认).{1,100}|"
+        r"我需要.{1,80}才能继续|.{1,80}是什么)", request
+    ):
+        return False
+    if re.search(r"如果|可选|不必|无需|不用|已经完成|已完成", request):
+        return False
+    materials = re.findall(r"日期|时间|文件|信息|材料|地址|参数|选项", request)
+    if not materials:
+        return False
+    if re.search(r"才能继续|后我再继续|[，,]我再", request):
+        return True
+    contexts = payload.get("request-context", payload.get("input-messages", []))
+    if not isinstance(contexts, list):
+        return False
+    for context in contexts:
+        if not isinstance(context, str):
+            continue
+        for sentence in re.split(r"[。.!！?？，,；;\n]", context):
+            if (
+                re.search(r"尚未提供|未提供|未给出|缺少|缺失|尚未上传|未上传", sentence)
+                and any(material in sentence for material in materials)
+            ):
+                return True
+    return False
+
+
 def classify_attention(
     payload: dict[str, Any], *, local_terminal_evidence: bool = False
 ) -> AttentionDecision:
@@ -429,6 +460,16 @@ def classify_attention(
         return AttentionDecision(
             AttentionState.SUPPRESSED_INTERMEDIATE,
             "explicitly_not_waiting_for_owner",
+        )
+    if (
+        local_terminal_evidence
+        and not any(pattern.search(normalized_message) for _, pattern in INTERMEDIATE_RULES)
+        and _chinese_blocking_input(assistant_message, payload)
+    ):
+        return AttentionDecision(
+            AttentionState.NEEDS_ATTENTION,
+            "blocked_until_user_action",
+            AttentionReason.INPUT_REQUIRED,
         )
     for reason, pattern in WAITING_RULES:
         if pattern.search(normalized_message):

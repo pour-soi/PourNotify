@@ -228,6 +228,52 @@ def appointment_diagnostics(pipeline):
     ]
 
 
+def test_chinese_create_thread_wait_dispatches_input_once(appointment_pipeline, tmp_path):
+    from test_codex_observer import (
+        FIXED_NOW,
+        _codex_app_completed_turn,
+        _session_meta,
+        _write_records,
+    )
+
+    from pournotify.services.codex_observer import CodexRolloutObserver
+
+    pipeline = appointment_pipeline
+    prompt = (
+        "PR6-CONTEXT-CASE2。请写一句可复制到日历的预约提醒。"
+        "目前尚未提供预约日期和开始时间。不要自行猜测；"
+        "请询问缺少的信息，然后停止等待。不要创建其他任务或子代理。"
+    )
+    response = "请提供预约日期和开始时间，我再帮你写一句可复制到日历的预约提醒。"
+    observed = []
+
+    def dispatch(candidate):
+        observed.append(candidate)
+        dispatch_appointment(pipeline, "codex_local_fallback", payload=candidate)
+
+    sessions = tmp_path / "sessions"
+    sessions.mkdir()
+    observer = CodexRolloutObserver(sessions, dispatch, enabled=True, clock=lambda: FIXED_NOW)
+    thread, turn = "thread-chinese-case", "turn-chinese-case"
+    _write_records(
+        sessions / "2026/08/30/rollout-chinese-case.jsonl",
+        [_session_meta(thread, thread_source="agent_created_thread"),
+         *_codex_app_completed_turn(thread, turn, prompt, response)],
+    )
+    observer.poll_once()
+    assert len(observed) == 1
+    assert not dispatch_appointment(pipeline, "ipc", payload=observed[0])
+    assert [len(channel.items) for channel in pipeline.channels] == [1, 1, 1]
+    assert [(row["type"], row["count"]) for row in pipeline.history.read()] == [
+        ("input_required", 1)
+    ]
+    assert appointment_diagnostics(pipeline)[0]["classification_reason"] == (
+        "blocked_until_user_action"
+    )
+    assert prompt not in pipeline.diagnostics.path.read_text(encoding="utf-8")
+    assert response not in pipeline.history.path.read_text(encoding="utf-8")
+
+
 @pytest.mark.parametrize("first_source", ["ipc", "codex_local_fallback"])
 def test_blocking_appointment_question_delivers_once_across_both_paths(
     appointment_pipeline, first_source
