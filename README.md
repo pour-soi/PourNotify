@@ -37,11 +37,47 @@
 
 ## Overview
 
-PourNotify receives Codex completion events and routes them through the channels enabled for each
-category. Notification Test uses the same dispatcher as real Codex completions.
+PourNotify receives Codex events and routes user-facing attention transitions through the channels
+enabled for each category. Notification Test uses the same dispatcher as real Codex events.
 
 Configuration, History, and diagnostics stay on your computer. PourNotify has no hosted backend or
 account requirement.
+
+## Development draft: Codex needs attention
+
+The unreleased development branch treats `needs_attention` as the primary Codex lifecycle state.
+A supported user-facing turn needs attention when Codex has stopped and is waiting because the
+current work finished or required input is missing. Known internal housekeeping,
+automatically continuing progress, and ambiguous turns remain silent.
+
+Existing configuration keys remain compatible: `finished` uses `task_completed`, while
+`input_required` and `approval_required` retain their existing categories. All three produce a
+short **Codex Needs Attention · Project** title (when a safe project name is available) and a
+one-sentence reason. The full Codex response stays in Codex and is not copied into Desktop, Bark,
+or new History entries.
+
+### Approval validation limitation (PR #6)
+
+Finished and Input Required passed the recorded real-task physical checks. Formal, mid-turn
+permission approval waits are **not currently supported reliably**: the real Case 3 approval
+prompt produced no notification. The `approval_required` category defaults to disabled in new
+configurations and when no enabled value is saved; explicit existing choices are preserved. Its
+existence and text classification do not establish detection of a live permission gate.
+
+Codex's app-server protocol provides `item/commandExecution/requestApproval` and
+`serverRequest/resolved`, with thread, turn, item and request identities. However, the installed
+Desktop's inspected rollout, database and log sources do not expose a usable pending/resolved
+approval sequence to this observer. The Desktop maintains live conversation requests; a request
+for `require_escalated`, an `inProgress` turn, or a missing tool result is not proof that owner
+approval is pending. No heuristic fallback is added for those signals.
+
+A future adapter requires an authoritative read-only pending snapshot/event stream and resolution
+tracking, per-request deduplication across intake paths, and startup baselining without replay.
+Approval resolution must not itself mean completion or consume a later finished transition's
+identity. Approve/reject/cancel, restart and parallel-thread approval behavior remain unvalidated
+until that source is available. The owner-approved scope of PR #6 is Finished and Input Required
+only; formal approval-wait detection is explicitly excluded, not considered a passing Case 3.
+See the [official approval protocol](https://learn.chatgpt.com/docs/app-server#approvals).
 
 ## Features
 
@@ -68,7 +104,7 @@ The latest stable release is **v1.0.5**.
 2. Configure desktop, sound, History, and optional Bark delivery in **Settings**.
 3. Optionally enable **Start PourNotify automatically when I sign in** for silent tray startup.
 4. Connect the global Codex notification hook using the example below.
-5. Run **Notification Test**, then complete a Codex task to verify delivery.
+5. Run **Notification Test**, then let a user-facing Codex task stop to verify delivery.
 
 When PourNotify is already running, launching it normally opens the existing window. Login startup
 does not open the window or create a second resident.
@@ -105,14 +141,28 @@ When PourNotify is already resident, the temporary invocation sends the JSON pay
 local Qt IPC and exits. If no resident process accepts the connection, the invocation starts a
 hidden temporary instance, processes the same payload locally, and exits after delivery.
 
+On Windows, **Recover missed Codex attention events with the local observer** is an optional,
+default-off supplement to the hook. The resident reads only newly appended records from
+`%USERPROFILE%\.codex\sessions\YYYY\MM\DD\rollout-*.jsonl`, baselines existing records without
+replay, and sends qualifying turns through the same attention classifier and dispatcher. A
+persistent thread/turn ledger prevents a hook event and its fallback copy from producing two
+notifications. The fallback does not replace or disable the normal notify command.
+
+Both intake paths verify the local rollout's structural thread source before notifying. Internal
+collaboration subagents never become owner-attention alerts, even when their external notify payload
+looks like a substantive final response.
+
 > PourNotify currently parses Codex `agent-turn-complete` hook events. Codex does not provide an
-> explicit task-terminal lifecycle signal in this payload, so PourNotify conservatively classifies
-> each turn as completed, owner action required, internal, intermediate, or ambiguous. Other payload
-> types are recorded as unsupported diagnostics rather than presented as supported notifications.
+> explicit attention or task-terminal field in the documented notify contract. PourNotify therefore
+> combines stable thread/turn identity, user-facing stop evidence, explicit owner-action wording,
+> and conservative internal/progress suppression. Ambiguous events remain silent.
 
 ## Notification controls
 
-Each notification category keeps its own settings for:
+The Settings page groups the three Codex attention reasons—Finished, Input Required, and Approval
+Required (marked unsupported)—under **Notify me when Codex needs my attention**. The first two are
+the supported product scope; Approval Required is default-off compatibility only. These categories
+remain intact for backward compatibility. Each reason keeps its own settings for:
 
 - enabled state;
 - desktop, Bark, sound, and History delivery;
@@ -120,19 +170,20 @@ Each notification category keeps its own settings for:
 - priority.
 
 Global settings add quiet hours, Bark silence during quiet hours, critical-event exceptions,
-cooldowns, per-minute limits, and duplicate suppression or merging. The current application includes
-14 configurable categories, including separate Task Completed, Approval Required, and Input Required
-controls. Category names remain application configuration rather than a promised public API.
+cooldowns, per-minute limits, and duplicate suppression or merging. Unrelated system and quota
+categories remain in a separate settings table. Category names remain application configuration
+rather than a promised public API.
 
 ## History and diagnostics
 
-History is stored locally and can be searched, copied, cleared, or exported as JSON or CSV. It
-preserves the complete notification message while the desktop and Bark presentation may use a
-shorter delivery preview.
+History is stored locally and can be searched, copied, cleared, or exported as JSON or CSV. Generic
+notifications preserve their complete message. New Codex attention entries intentionally store only
+the same short reason sent to Desktop and Bark, never the complete assistant response.
 
 **Help > Open Notification Diagnostics** opens the local diagnostics directory. Each received hook
-event produces a JSONL record containing its source, dispatch status, channel attempts and results,
-HTTP status, duration, and any exception. Logs rotate automatically and never include the configured
+or fallback event produces a JSONL record containing its source, safe thread/turn identity,
+attention state and reason, classification and dedupe results, channel attempts and results, HTTP
+status, duration, and any exception. Logs rotate automatically and never include the configured
 Bark device key.
 
 ## Privacy
@@ -140,9 +191,12 @@ Bark device key.
 - PourNotify has no hosted backend, user account, telemetry, or browser cookies.
 - Configuration, notification History, and diagnostic logs remain in the local application-data
   directory unless you explicitly export History.
-- PourNotify does not collect or store full Codex conversations. User-facing notification content is
-  stored locally in History when that category is enabled. Diagnostics store structural event fields,
+- PourNotify does not collect or store full Codex conversations. Codex attention History stores only
+  a fixed short reason when that category is enabled. Diagnostics store structural event fields,
   classification reasons, and delivery results without raw prompts or assistant output.
+- When the optional fallback is enabled, prompt and final-answer text is inspected transiently in
+  memory by the same lifecycle classifier. The fallback ledger stores only thread/turn identity,
+  event source, and claim time; it does not store conversation text.
 - Bark delivery sends the notification title and body to the HTTPS Bark server you configure.
 - The Bark device key is stored in local configuration. Never commit that file or paste the key into
   issues, logs, screenshots, or examples.

@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 
 from pournotify.config import AppConfig
-from pournotify.main import build_parser, launch_action
+from pournotify.main import build_parser, launch_action, should_create_codex_observer
 from pournotify.services.startup import (
     RUN_KEY,
     VALUE_NAME,
@@ -78,6 +78,14 @@ def test_parser_accepts_observation_mode():
     assert parsed.observe_notify == '{"type":"example"}'
     assert parsed.notify is None
     assert parsed.background is False
+
+
+def test_local_observer_is_resident_only_and_windows_only():
+    assert should_create_codex_observer("background", "win32")
+    assert should_create_codex_observer("show", "win32")
+    assert not should_create_codex_observer("notify", "win32")
+    assert not should_create_codex_observer("observe_notify", "win32")
+    assert not should_create_codex_observer("background", "darwin")
 
 
 def test_background_and_manual_launch_choose_expected_resident_action(monkeypatch):

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -37,6 +38,17 @@ from ..services.startup import (
 )
 
 
+def codex_local_fallback_supported() -> bool:
+    return sys.platform == "win32"
+
+
+CODEX_ATTENTION_CATEGORIES = (
+    Category.TASK_COMPLETED,
+    Category.INPUT_REQUIRED,
+    Category.APPROVAL_REQUIRED,
+)
+
+
 class SettingsPage(QWidget):
     def __init__(
         self,
@@ -44,11 +56,14 @@ class SettingsPage(QWidget):
         store: ConfigStore,
         sounds: SoundManager,
         theme_changed: Callable[[str], None] | None = None,
+        fallback_changed: Callable[[bool], None] | None = None,
     ):
         super().__init__()
         self.config, self.store, self.sounds = config, store, sounds
         self.theme_changed = theme_changed
+        self.fallback_changed = fallback_changed
         self.category_controls: dict[Category, dict[str, object]] = {}
+        self.preview_category = Category.TASK_COMPLETED
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -62,6 +77,7 @@ class SettingsPage(QWidget):
         layout.setSpacing(16)
         layout.addWidget(self._appearance_card())
         layout.addWidget(self._startup_card())
+        layout.addWidget(self._codex_attention_card())
         layout.addWidget(self._bark_card())
         layout.addWidget(self._quiet_card())
         layout.addWidget(self._anti_spam_card())
@@ -128,6 +144,30 @@ class SettingsPage(QWidget):
         )
         self.start_with_windows.setEnabled(startup_supported())
         layout.addWidget(self.start_with_windows)
+        return card
+
+    def _codex_attention_card(self) -> QWidget:
+        card, layout = self._card(
+            "Notify me when Codex needs my attention",
+            "Finished and Input Required are supported. Approval Required is retained for "
+            "compatibility and defaults to off; real permission-wait detection is not supported "
+            "reliably. Each category keeps its existing delivery settings.",
+        )
+        self.attention_table = self._category_table(
+            CODEX_ATTENTION_CATEGORIES,
+            object_name="codexAttentionTable",
+            minimum_height=184,
+        )
+        layout.addWidget(self.attention_table)
+        self.codex_local_fallback = QCheckBox(
+            "Recover missed Codex attention events with the local observer"
+        )
+        self.codex_local_fallback.setChecked(self.config.codex_local_fallback_enabled)
+        self.codex_local_fallback_available = codex_local_fallback_supported()
+        self.codex_local_fallback.setEnabled(self.codex_local_fallback_available)
+        if not self.codex_local_fallback_available:
+            self.codex_local_fallback.setToolTip("Local fallback detection is available on Windows.")
+        layout.addWidget(self.codex_local_fallback)
         return card
 
     def _bark_card(self) -> QWidget:
@@ -209,39 +249,66 @@ class SettingsPage(QWidget):
 
     def _categories_card(self) -> QWidget:
         card, layout = self._card(
-            "Notification Categories",
-            "Each category keeps independent delivery, sound, volume, history, and priority settings.",
+            "Other Notification Categories",
+            "Unrelated system and quota events keep independent delivery settings.",
         )
-        self.table = QTableWidget(len(Category), 5)
-        self.table.setObjectName("categoryTable")
-        self.table.setAlternatingRowColors(True)
-        self.table.setMinimumHeight(640)
-        self.table.setHorizontalHeaderLabels(
+        other_categories = tuple(
+            category for category in Category if category not in CODEX_ATTENTION_CATEGORIES
+        )
+        self.table = self._category_table(
+            other_categories,
+            object_name="categoryTable",
+            minimum_height=520,
+        )
+        layout.addWidget(self.table)
+        return card
+
+    def _category_table(
+        self,
+        categories: tuple[Category, ...],
+        *,
+        object_name: str,
+        minimum_height: int,
+    ) -> QTableWidget:
+        table = QTableWidget(len(categories), 5)
+        table.setObjectName(object_name)
+        table.setAlternatingRowColors(True)
+        table.setMinimumHeight(minimum_height)
+        table.setHorizontalHeaderLabels(
             ["Category", "Enabled", "Delivery Channels", "Sound", "Priority"]
         )
-        self.table.verticalHeader().setVisible(False)
-        self.table.setSelectionBehavior(QTableWidget.SelectRows)
-        self.table.setSelectionMode(QTableWidget.SingleSelection)
-        self.table.setShowGrid(False)
-        for row, category in enumerate(Category):
-            self._populate_category_row(row, category)
-            self.table.setRowHeight(row, 46)
-        header = self.table.horizontalHeader()
+        table.verticalHeader().setVisible(False)
+        table.setSelectionBehavior(QTableWidget.SelectRows)
+        table.setSelectionMode(QTableWidget.SingleSelection)
+        table.setShowGrid(False)
+        for row, category in enumerate(categories):
+            self._populate_category_row(table, row, category)
+            table.setRowHeight(row, 46)
+        table.currentCellChanged.connect(
+            lambda row, _column, _previous_row, _previous_column, values=categories: (
+                self._set_preview_category(values[row]) if row >= 0 else None
+            )
+        )
+        header = table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(2, QHeaderView.Stretch)
         header.setSectionResizeMode(3, QHeaderView.Stretch)
         header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
-        layout.addWidget(self.table)
-        return card
+        return table
 
-    def _populate_category_row(self, row: int, category: Category) -> None:
+    def _populate_category_row(
+        self, table: QTableWidget, row: int, category: Category
+    ) -> None:
         setting = self.config.categories[category.value]
         label = QTableWidgetItem(CATEGORY_LABELS[category])
+        if category == Category.APPROVAL_REQUIRED:
+            label.setText("Approval Required (unsupported)")
+            label.setToolTip("Compatibility only; real approval-wait detection is not reliable.")
         label.setData(Qt.UserRole, category.value)
-        self.table.setItem(row, 0, label)
+        table.setItem(row, 0, label)
         enabled = self._centered_checkbox(setting.enabled)
-        self.table.setCellWidget(row, 1, enabled["container"])
+        table.setCellWidget(row, 1, enabled["container"])
 
         delivery_widget = QWidget()
         delivery = QHBoxLayout(delivery_widget)
@@ -257,7 +324,7 @@ class SettingsPage(QWidget):
         delivery.addWidget(desktop)
         delivery.addWidget(history)
         delivery.addStretch()
-        self.table.setCellWidget(row, 2, delivery_widget)
+        table.setCellWidget(row, 2, delivery_widget)
 
         sound_widget = QWidget()
         sound_layout = QHBoxLayout(sound_widget)
@@ -276,12 +343,12 @@ class SettingsPage(QWidget):
         sound_layout.addWidget(sound)
         sound_layout.addWidget(choice, 1)
         sound_layout.addWidget(volume)
-        self.table.setCellWidget(row, 3, sound_widget)
+        table.setCellWidget(row, 3, sound_widget)
 
         priority = QComboBox()
         priority.addItems([value.value.title() for value in Priority])
         priority.setCurrentText(setting.priority.value.title())
-        self.table.setCellWidget(row, 4, priority)
+        table.setCellWidget(row, 4, priority)
         self.category_controls[category] = {
             "enabled": enabled["checkbox"],
             "bark": bark,
@@ -292,6 +359,9 @@ class SettingsPage(QWidget):
             "volume": volume,
             "priority": priority,
         }
+
+    def _set_preview_category(self, category: Category) -> None:
+        self.preview_category = category
 
     @staticmethod
     def _centered_checkbox(checked: bool) -> dict[str, QWidget]:
@@ -328,9 +398,7 @@ class SettingsPage(QWidget):
         return buttons
 
     def preview(self) -> None:
-        row = max(0, self.table.currentRow())
-        category = tuple(Category)[row]
-        controls = self.category_controls[category]
+        controls = self.category_controls[self.preview_category]
         self.sounds.play(
             controls["choice"].currentText(),
             controls["volume"].value(),
@@ -356,6 +424,7 @@ class SettingsPage(QWidget):
         if not self.bark_url.text().startswith("https://"):
             QMessageBox.warning(self, "Invalid Bark URL", "Bark requires an HTTPS server URL.")
             return
+        fallback_value_changed = False
         if startup_supported():
             requested_startup = self.start_with_windows.isChecked()
             try:
@@ -370,6 +439,12 @@ class SettingsPage(QWidget):
                 QMessageBox.warning(self, "Startup update failed", str(exc))
                 return
             self.config.start_with_windows = requested_startup
+        if self.codex_local_fallback_available:
+            requested_fallback = self.codex_local_fallback.isChecked()
+            fallback_value_changed = (
+                requested_fallback != self.config.codex_local_fallback_enabled
+            )
+            self.config.codex_local_fallback_enabled = requested_fallback
         self.config.bark_enabled = self.bark_enabled.isChecked()
         self.config.bark_server_url = self.bark_url.text().strip()
         self.config.bark_device_key = self.bark_key.text().strip()
@@ -396,6 +471,8 @@ class SettingsPage(QWidget):
             setting.volume = controls["volume"].value()
             setting.priority = Priority(controls["priority"].currentText().lower())
         self.store.save(self.config)
+        if fallback_value_changed and self.fallback_changed is not None:
+            self.fallback_changed(self.config.codex_local_fallback_enabled)
         if self.theme_changed is not None:
             self.theme_changed(self.config.theme)
         QMessageBox.information(self, "Settings saved", "Notification settings were saved.")

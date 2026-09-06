@@ -30,6 +30,7 @@ def default_categories() -> dict[str, CategorySettings]:
         settings[category.value].priority = Priority.CRITICAL
     settings[Category.BONUS_QUOTA.value].priority = Priority.HIGH
     settings[Category.BARK_TEST.value].history = False
+    settings[Category.APPROVAL_REQUIRED.value].enabled = False
     return settings
 
 
@@ -59,6 +60,7 @@ class AppConfig:
     demo_mode: bool = False
     theme: str = "system"
     start_with_windows: bool = False
+    codex_local_fallback_enabled: bool = False
     categories: dict[str, CategorySettings] = field(default_factory=default_categories)
     custom_sounds: dict[str, str] = field(default_factory=dict)
 
@@ -66,10 +68,14 @@ class AppConfig:
     def from_dict(cls, raw: dict[str, Any]) -> AppConfig:
         defaults = cls()
         values = {key: raw[key] for key in asdict(defaults) if key in raw and key != "categories"}
+        if not isinstance(values.get("codex_local_fallback_enabled", False), bool):
+            values["codex_local_fallback_enabled"] = False
         categories = default_categories()
         for name, value in raw.get("categories", {}).items():
             if name in categories and isinstance(value, dict):
-                categories[name] = CategorySettings.from_dict(value)
+                categories[name] = CategorySettings.from_dict(
+                    {"enabled": categories[name].enabled, **value}
+                )
         values["categories"] = categories
         values["version"] = CONFIG_VERSION
         return cls(**values)

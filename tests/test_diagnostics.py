@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from pournotify.config import AppConfig
 from pournotify.main import dispatch_codex_payload
 from pournotify.models import Category, Notification
+from pournotify.services.codex_observer import OBSERVER_VERSION
 from pournotify.services.delivery import BarkClient, BarkDeliveryResult
 from pournotify.services.diagnostics import NotificationDiagnostics
 from pournotify.services.dispatcher import DispatchTrace, NotificationDispatcher
@@ -100,11 +101,14 @@ def test_supported_event_records_complete_delivery_diagnostics(tmp_path):
     assert record["history_result"] == "success"
     assert record["http_status"] == 200
     assert record["bark_response"] == '{"code":200}'
-    assert record["completion_classification"] == "high_confidence_completion"
-    assert record["completion_reason"] == "substantive_user_facing_result"
+    assert record["completion_classification"] == "needs_attention"
+    assert record["completion_reason"] == "substantive_user_facing_stop"
+    assert record["attention_state"] == "needs_attention"
+    assert record["attention_reason"] == "finished"
+    assert record["classification_reason"] == "substantive_user_facing_stop"
     assert record["classifier_version"]
-    assert record["lifecycle_classification"] == "high_confidence_completion"
-    assert record["lifecycle_reason"] == "substantive_user_facing_result"
+    assert record["lifecycle_classification"] == "needs_attention"
+    assert record["lifecycle_reason"] == "finished"
     assert record["observation_only"] is False
     assert record["duration_ms"] >= 0
     assert record["version"]
@@ -192,6 +196,56 @@ def test_diagnostics_redacts_payload_bearing_command_line_arguments(tmp_path):
     assert "PRIVATE-ARGUMENT" not in serialized
 
 
+def test_create_thread_observer_payload_redacts_original_request_context(tmp_path):
+    path = tmp_path / "notify-diagnostics.jsonl"
+    diagnostics = NotificationDiagnostics(path)
+    private_marker = "PRIVATE-CREATE-THREAD-REQUEST"
+    original_request = (
+        f"{private_marker}: The appointment date and start time have not yet been supplied."
+    )
+    assistant_message = "What is the appointment date and start time?"
+    raw_create_thread_xml = (
+        "<codex_delegation>"
+        "<source_thread_id>private-source-thread</source_thread_id>"
+        f"<input>{original_request}</input>"
+        "</codex_delegation>"
+    )
+    payload = {
+        "type": "agent-turn-complete",
+        "thread-id": "create-thread-private-thread",
+        "turn-id": "create-thread-private-turn",
+        "cwd": r"F:\work\Appointment",
+        "input-messages": [original_request],
+        "last-assistant-message": assistant_message,
+        "raw-create-thread-output": raw_create_thread_xml,
+    }
+
+    assert dispatch_codex_payload(
+        SimpleNamespace(dispatcher=SuccessfulDispatcher()),
+        json.dumps(payload),
+        diagnostics,
+        notify_source="codex_local_fallback",
+        observer_version=OBSERVER_VERSION,
+    )
+
+    serialized = path.read_text(encoding="utf-8")
+    record = read_lines(path)[0]
+    assert record["received_payload"] == {
+        "type": "agent-turn-complete",
+        "thread-id": "create-thread-private-thread",
+        "turn-id": "create-thread-private-turn",
+        "cwd": r"F:\work\Appointment",
+        "input-message-count": 1,
+        "last-assistant-message-length": len(assistant_message),
+    }
+    assert record["notify_source"] == "codex_local_fallback"
+    assert record["observer_version"] == OBSERVER_VERSION
+    assert private_marker not in serialized
+    assert raw_create_thread_xml not in serialized
+    assert "<codex_delegation>" not in serialized
+    assert assistant_message not in serialized
+
+
 def test_dispatcher_populates_channel_trace_without_changing_status():
     config = AppConfig(bark_enabled=True, bark_device_key="configured")
     config.categories[Category.TASK_COMPLETED.value].bark = True
@@ -249,9 +303,12 @@ def test_suppressed_completion_records_safe_diagnostics_without_dispatch(tmp_pat
 
     serialized = path.read_text(encoding="utf-8")
     record = read_lines(path)[0]
-    assert record["dispatch_status"] == "completion_suppressed"
+    assert record["dispatch_status"] == "attention_suppressed"
     assert record["completion_classification"] == "suppressed_internal"
     assert record["completion_reason"] == "activity_summary_turn"
+    assert record["attention_state"] == "suppressed_internal"
+    assert record["attention_reason"] == ""
+    assert record["classification_reason"] == "activity_summary_turn"
     assert record["thread_id"] == "internal-thread"
     assert record["turn_id"] == "internal-turn"
     assert record["desktop_attempted"] is False
@@ -262,7 +319,7 @@ def test_suppressed_completion_records_safe_diagnostics_without_dispatch(tmp_pat
     assert "PRIVATE-RESULT" not in serialized
 
 
-def test_observation_only_classifies_high_confidence_without_dispatch(tmp_path):
+def test_observation_only_classifies_attention_without_dispatch(tmp_path):
     class FailingDispatcher:
         @staticmethod
         def dispatch(*args, **kwargs):
@@ -290,7 +347,8 @@ def test_observation_only_classifies_high_confidence_without_dispatch(tmp_path):
 
     record = read_lines(path)[0]
     assert record["dispatch_status"] == "observation_only"
-    assert record["completion_classification"] == "high_confidence_completion"
+    assert record["completion_classification"] == "needs_attention"
+    assert record["attention_reason"] == "finished"
     assert record["observation_only"] is True
     assert record["desktop_attempted"] is False
     assert record["sound_attempted"] is False

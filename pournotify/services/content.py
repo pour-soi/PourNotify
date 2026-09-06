@@ -9,10 +9,10 @@ PREVIEW_LIMIT = 250
 PREVIEW_MAX_LINES = 5
 
 SYSTEM_TITLES = {
-    Category.TASK_COMPLETED: "Codex Task Completed",
+    Category.TASK_COMPLETED: "Codex Needs Attention",
     Category.TASK_FAILED: "Codex Task Failed",
-    Category.APPROVAL_REQUIRED: "Codex Approval Required",
-    Category.INPUT_REQUIRED: "Codex Needs Your Input",
+    Category.APPROVAL_REQUIRED: "Codex Needs Attention",
+    Category.INPUT_REQUIRED: "Codex Needs Attention",
     Category.BONUS_QUOTA: "Bonus Quota",
     Category.LOW_QUOTA: "Rate Limit Warning",
     Category.QUOTA_EXHAUSTED: "Rate Limit Warning",
@@ -20,12 +20,15 @@ SYSTEM_TITLES = {
 }
 
 TITLE_ALIASES = {
-    "task completed": "Codex Task Completed",
-    "codex completed": "Codex Task Completed",
-    "codex task complete": "Codex Task Completed",
+    "task completed": "Codex Needs Attention",
+    "codex completed": "Codex Needs Attention",
+    "codex task complete": "Codex Needs Attention",
+    "codex task completed": "Codex Needs Attention",
     "task failed": "Codex Task Failed",
-    "approval required": "Codex Approval Required",
-    "input required": "Codex Needs Your Input",
+    "approval required": "Codex Needs Attention",
+    "codex approval required": "Codex Needs Attention",
+    "input required": "Codex Needs Attention",
+    "codex needs your input": "Codex Needs Attention",
     "bonus quota detected": "Bonus Quota",
     "low quota": "Rate Limit Warning",
     "quota exhausted": "Rate Limit Warning",
@@ -43,8 +46,14 @@ def normalize_system_title(notification: Notification) -> Notification:
     """Return canonical known-system titles without touching custom notifications."""
     if not notification.system_generated:
         return notification
-    title = TITLE_ALIASES.get(notification.title.strip().casefold())
-    title = title or SYSTEM_TITLES.get(notification.category)
+    stripped = notification.title.strip()
+    canonical = SYSTEM_TITLES.get(notification.category)
+    if canonical == "Codex Needs Attention" and (
+        stripped == canonical or stripped.startswith(f"{canonical} · ")
+    ):
+        return notification
+    title = TITLE_ALIASES.get(stripped.casefold())
+    title = title or canonical
     return replace(notification, title=title) if title else notification
 
 
